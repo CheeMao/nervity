@@ -1,0 +1,9 @@
+--- Reproduce Issue Start ---
+Creating Zero/Null Value card...
+Test Card Created: PED4HVG4RN, Value: 0
+User Before Expire: Fri Feb 13 2026 18:21:19 GMT+0800 (中国标准时间)
+Redeeming card...
+Redeem Result: {"success":true,"message":"激活成功","expire_time":"2026-02-13T10:21:19.000Z","added_seconds":0,"max_devices":1}
+User After Expire: Fri Feb 13 2026 18:21:19 GMT+0800 (中国标准时间)
+User has valid future time.
+--- Reproduce Issue End ---

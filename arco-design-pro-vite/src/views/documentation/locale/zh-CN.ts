@@ -1,0 +1,108 @@
+export default {
+  'documentation.title': '系统使用指南',
+  'documentation.tab.overview': '概述',
+  'documentation.tab.auth': '用户认证',
+  'documentation.tab.card': '卡密管理',
+  'documentation.tab.device': '设备管理',
+  'documentation.tab.variable': '远程变量',
+  'documentation.tab.cloud': '云函数',
+  'documentation.tab.encryption': '数据加密',
+
+  // 概述
+  'documentation.overview.baseInfo': '基础信息',
+  'documentation.overview.baseUrl': '基础地址',
+  'documentation.overview.baseUrlDesc': '所有API请求的基础URL',
+  'documentation.overview.responseFormat': '响应格式',
+  'documentation.overview.responseFormatDesc': '所有接口统一使用以下响应格式',
+  'documentation.overview.responseStatus': 'status',
+  'documentation.overview.responseStatusDesc': 'HTTP状态码',
+  'documentation.overview.responseCode': 'code',
+  'documentation.overview.responseCodeDesc': '业务状态码 (20000=成功)',
+  'documentation.overview.responseMsg': 'msg',
+  'documentation.overview.responseMsgDesc': '提示信息',
+  'documentation.overview.responseData': 'data',
+  'documentation.overview.responseDataDesc': '返回数据',
+
+  // 签名
+  'documentation.signature.title': '签名验证',
+  'documentation.signature.required': '需要签名的接口',
+  'documentation.signature.requiredDesc': '以下接口需要携带签名请求头',
+  'documentation.signature.headers': '签名请求头',
+  'documentation.signature.headerAppId': '应用ID',
+  'documentation.signature.headerTimestamp': '时间戳 (秒)',
+  'documentation.signature.headerTimestampDesc': '当前Unix时间戳，有效期±60秒',
+  'documentation.signature.headerNonce': '随机字符串',
+  'documentation.signature.headerNonceDesc': '随机字符串，防止重放攻击',
+  'documentation.signature.headerSignature': '签名',
+  'documentation.signature.headerSignatureDesc': 'HMAC-SHA256签名值 (Hex)',
+  'documentation.signature.algorithm': '签名算法',
+  'documentation.signature.step1': '构造待签名字符串',
+  'documentation.signature.step2': '计算签名',
+  'documentation.signature.example': '示例代码',
+
+  // 认证API
+  'documentation.auth.title': '用户认证接口',
+  'documentation.auth.register': '用户注册',
+  'documentation.auth.registerDesc': '注册新的终端用户账号',
+  'documentation.auth.login': '用户登录',
+  'documentation.auth.loginDesc': '终端用户登录，获取访问令牌',
+  'documentation.auth.profile': '获取用户信息',
+  'documentation.auth.profileDesc': '获取当前登录用户的详细信息',
+  'documentation.auth.heartbeat': '客户端心跳',
+  'documentation.auth.heartbeatDesc': '保持会话活跃，获取用户最新状态',
+
+  // 卡密API
+  'documentation.card.title': '卡密接口',
+  'documentation.card.redeem': '卡密激活/充值',
+  'documentation.card.redeemDesc': '使用卡密为当前用户激活或充值时长',
+  'documentation.card.trial': '试用激活',
+  'documentation.card.trialDesc': '申请试用激活 (每设备限一次)',
+
+  // 设备API
+  'documentation.device.title': '设备接口',
+  'documentation.device.heartbeat': '设备心跳',
+  'documentation.device.heartbeatDesc': '上报设备在线状态，获取服务器指令',
+  'documentation.device.checkOnline': '检查在线状态',
+  'documentation.device.checkOnlineDesc': '检查指定设备是否在线',
+  'documentation.device.getByHwid': '查询设备信息',
+  'documentation.device.getByHwidDesc': '根据HWID查询设备详细信息',
+  'documentation.device.onlineCount': '在线设备数',
+  'documentation.device.onlineCountDesc': '获取指定应用的在线设备数量',
+
+  // 远程变量API
+  'documentation.variable.title': '远程变量接口',
+  'documentation.variable.getOne': '获取单个变量',
+  'documentation.variable.getOneDesc': '根据变量名获取单个远程变量',
+  'documentation.variable.getList': '获取变量列表',
+  'documentation.variable.getListDesc': '获取应用下所有远程变量 (数组格式)',
+  'documentation.variable.getObject': '获取变量对象',
+  'documentation.variable.getObjectDesc': '获取应用下所有远程变量 (键值对格式)',
+
+  // 云函数API
+  'documentation.cloud.title': '云函数接口',
+  'documentation.cloud.run': '执行云函数',
+  'documentation.cloud.runDesc': '触发并执行指定的云函数',
+
+  // 加密API
+  'documentation.encryption.title': '数据加密',
+  'documentation.encryption.publicKey': '获取公钥',
+  'documentation.encryption.publicKeyDesc': '获取RSA公钥，用于混合加密',
+  'documentation.encryption.hybrid': '混合加密流程',
+  'documentation.encryption.hybridDesc': 'RSA+AES混合加密说明',
+
+  // 通用
+  'documentation.common.request': '请求',
+  'documentation.common.response': '响应',
+  'documentation.common.params': '参数',
+  'documentation.common.field': '字段',
+  'documentation.common.type': '类型',
+  'documentation.common.required': '必填',
+  'documentation.common.description': '说明',
+  'documentation.common.yes': '是',
+  'documentation.common.no': '否',
+  'documentation.common.example': '示例',
+  'documentation.common.note': '注意',
+  'documentation.common.method': '方法',
+  'documentation.common.path': '路径',
+  'documentation.common.auth': '认证方式',
+};
