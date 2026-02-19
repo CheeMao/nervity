@@ -10,6 +10,7 @@ import {
   UseGuards,
   Request,
   Res,
+  BadRequestException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiQuery, ApiParam } from "@nestjs/swagger";
 import { Response } from "express";
@@ -123,8 +124,14 @@ export class CardsController {
   @ApiResponse({ status: 401, description: '未登录' })
   async redeem(@Body() body: { code: string; hwid?: string }, @Request() req) {
     // 必须登录，使用当前登录用户的 userId
-    const userId = req.user.userId;
-    return this.cardsService.useCard(body.code, userId, body.hwid || null, null);
+    try {
+      const userId = req.user.userId;
+      return await this.cardsService.useCard(body.code, userId, body.hwid || null, null);
+    } catch (e: any) {
+      console.error("Redeem Error:", e);
+      // Throw as BadRequest to see message in client
+      throw new BadRequestException(e.message);
+    }
   }
 
   @Post("trial")

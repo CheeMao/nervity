@@ -1033,7 +1033,7 @@ class NetVerifyClient:
         """
         app_id = app_id or self.app_id
         body = {"data": data} if data else {}
-        return self._request("POST", f"/cloud/run/{app_id}/{trigger_name}", data=body)
+        return self._request_with_signature("POST", f"/cloud/run/{app_id}/{trigger_name}", data=body)
 
     # ==================== 应用信息 ====================
 

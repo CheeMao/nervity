@@ -22,7 +22,7 @@ import { UpdateRemoteVariableDto } from "./dto/update-remote-variable.dto";
 export class RemoteVariablesController {
   constructor(
     private readonly remoteVariablesService: RemoteVariablesService,
-  ) {}
+  ) { }
 
   @Get()
   @UseGuards(JwtAuthGuard)

@@ -25,7 +25,7 @@ import { ExcelExportUtil } from "../common/utils/excel-export.util";
 @ApiTags('设备管理 (Devices)')
 @Controller("devices")
 export class DevicesController {
-  constructor(private readonly devicesService: DevicesService) {}
+  constructor(private readonly devicesService: DevicesService) { }
 
   @Get()
   @UseGuards(JwtAuthGuard)
@@ -85,26 +85,52 @@ export class DevicesController {
   @UseGuards(SignatureGuard)
   @ApiOperation({ summary: '客户端心跳上报', description: '客户端定期上报心跳，需要签名验证' })
   @ApiBody({ type: HeartbeatDto })
-  @ApiResponse({ status: 200, description: '心跳成功', schema: {
-    type: 'object',
-    properties: {
-      success: { type: 'boolean' },
-      interval: { type: 'number', description: '心跳间隔（秒）' },
-      server_time: { type: 'number', description: '服务器时间戳' },
-      commands: { type: 'array', items: { type: 'string' }, description: '服务器下发命令' },
-      message: { type: 'string' },
-    },
-  }})
+  @ApiResponse({
+    status: 200, description: '心跳成功', schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        interval: { type: 'number', description: '心跳间隔（秒）' },
+        server_time: { type: 'number', description: '服务器时间戳' },
+        commands: { type: 'array', items: { type: 'string' }, description: '服务器下发命令' },
+        message: { type: 'string' },
+      },
+    }
+  })
   @ApiResponse({ status: 401, description: '签名验证失败' })
   async heartbeat(
     @Body() heartbeatDto: HeartbeatDto,
     @Ip() ip: string,
     @Request() req: any,
   ) {
+    // Use the validated app from SignatureGuard
+    const app = req.validatedApp;
+
+    // Verify that the body app_id matches the signature app_id
+    if (heartbeatDto.app_id !== app.id) {
+      // We can either throw or just overwrite it. For security, better to overwrite or throw.
+      // Let's overwrite it to ensure it processes for the correct app.
+      // Or throw BadRequest if they don't match?
+      // Let's forbid it.
+      // Actually SignatureGuard might not catch it if the URL doesn't have :appId.
+      // But wait, heartbeat endpoint is @Post("heartbeat"), no :appId in URL.
+      // So SignatureGuard didn't check URL param.
+      // We must check here.
+      // Since SignatureGuard verified the signature against the x-app-id header,
+      // req.app is the authenticated app.
+      // We should ensure heartbeatDto.app_id matches req.app.id.
+    }
+
+    if (heartbeatDto.app_id !== app.id) {
+      // Ideally we should throw, but legacy clients might send weird stuff?
+      // No, security first.
+      // Actually, we can just IGNORE heartbeatDto.app_id and use app.id.
+    }
+
     const userId = req.user?.userId;
     return this.devicesService.handleHeartbeat({
       hwid: heartbeatDto.hwid,
-      app_id: heartbeatDto.app_id,
+      app_id: app.id, // Use validated App ID
       end_user_id: userId,
       last_ip: ip,
       app_version: heartbeatDto.app_version,

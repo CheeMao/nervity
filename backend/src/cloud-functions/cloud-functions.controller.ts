@@ -13,19 +13,22 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiQuery, ApiParam } from "@nestjs/swagger";
 import { CloudFunctionsService } from "./cloud-functions.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { SignatureGuard } from "../common/guards/signature.guard";
 
 @ApiTags('云函数 (Cloud Functions)')
 @Controller("cloud")
 export class CloudFunctionsController {
-  constructor(private readonly cloudFunctionsService: CloudFunctionsService) {}
+  constructor(private readonly cloudFunctionsService: CloudFunctionsService) { }
 
   @Post("run/:appId/:triggerName")
+  @UseGuards(SignatureGuard)
   @ApiOperation({ summary: '执行云函数', description: '执行指定应用的云函数' })
   @ApiParam({ name: 'appId', description: '应用ID', type: 'number' })
   @ApiParam({ name: 'triggerName', description: '触发器名称' })
   @ApiBody({ schema: { type: 'object', properties: { data: { type: 'object', description: '传递给云函数的数据' } } } })
   @ApiResponse({ status: 200, description: '执行成功' })
   @ApiResponse({ status: 400, description: '云函数不存在或执行错误' })
+  @ApiResponse({ status: 403, description: '无权限调用该云函数' })
   async execute(
     @Param("appId") appId: string,
     @Param("triggerName") triggerName: string,
@@ -38,15 +41,17 @@ export class CloudFunctionsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建云函数', description: '创建新的云函数。非管理员只能为自己的应用创建云函数' })
-  @ApiBody({ schema: {
-    type: 'object',
-    properties: {
-      trigger_name: { type: 'string', description: '触发器名称' },
-      code: { type: 'string', description: 'JavaScript代码' },
-      app_id: { type: 'number', description: '所属应用ID' },
-    },
-    required: ['trigger_name', 'code', 'app_id'],
-  }})
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        trigger_name: { type: 'string', description: '触发器名称' },
+        code: { type: 'string', description: 'JavaScript代码' },
+        app_id: { type: 'number', description: '所属应用ID' },
+      },
+      required: ['trigger_name', 'code', 'app_id'],
+    }
+  })
   @ApiResponse({ status: 201, description: '创建成功' })
   @ApiResponse({ status: 401, description: '未授权' })
   @ApiResponse({ status: 403, description: '无权限为该应用创建云函数' })
@@ -99,14 +104,16 @@ export class CloudFunctionsController {
   @Put(":id")
   @ApiOperation({ summary: '更新云函数', description: '更新云函数信息' })
   @ApiParam({ name: 'id', description: '云函数ID', type: 'number' })
-  @ApiBody({ schema: {
-    type: 'object',
-    properties: {
-      trigger_name: { type: 'string', description: '触发器名称' },
-      code: { type: 'string', description: 'JavaScript代码' },
-      app_id: { type: 'number', description: '所属应用ID' },
-    },
-  }})
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        trigger_name: { type: 'string', description: '触发器名称' },
+        code: { type: 'string', description: 'JavaScript代码' },
+        app_id: { type: 'number', description: '所属应用ID' },
+      },
+    }
+  })
   @ApiResponse({ status: 200, description: '更新成功' })
   update(@Param("id") id: string, @Body() updateDto: any) {
     return this.cloudFunctionsService.update(+id, updateDto);

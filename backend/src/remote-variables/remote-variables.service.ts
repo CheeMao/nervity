@@ -15,7 +15,7 @@ export class RemoteVariablesService {
     @InjectRepository(App)
     private appsRepository: Repository<App>,
     private dataPermissionService: DataPermissionService,
-  ) {}
+  ) { }
 
   /**
    * 分页查询远程变量列表

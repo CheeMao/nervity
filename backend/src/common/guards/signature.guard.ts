@@ -1,9 +1,11 @@
+
 import {
   Injectable,
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
   Inject,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -38,9 +40,6 @@ export class SignatureGuard implements CanActivate {
     const appId = request.headers["x-app-id"] as string;
 
     if (!timestamp || !nonce || !signature || !appId) {
-      // Allow bypassing for now if headers are missing to not break existing clients immediately?
-      // No, plan says to implement verification. We should return false or throw exception.
-      // But we might want a "Soft" mode. For now, strict.
       throw new BadRequestException("Missing signature headers");
     }
 
@@ -98,8 +97,27 @@ export class SignatureGuard implements CanActivate {
 
     if (calculatedSignature !== signature) {
       // Debug mode support could be added here
+      console.log(`Signature mismatch:
+        Received: ${signature}
+        Calculated: ${calculatedSignature}
+        DataToSign: ${dataToSign}
+        AppSecret: ${appSecret}
+      `);
       throw new UnauthorizedException("Invalid signature");
     }
+
+    // 6. Strict App Isolation Check
+    // If the route has an :appId param, it MUST match the signed App ID.
+    const paramAppId = request.params.appId;
+    const claimedAppId = Array.isArray(paramAppId) ? paramAppId[0] : paramAppId;
+
+    if (claimedAppId && parseInt(claimedAppId, 10) !== app.id) {
+      throw new ForbiddenException("App ID mismatch: You can only access resources belonging to your App");
+    }
+
+    // Attach app to request for controllers to use
+    // Rename to avoided conflict with Express req.app
+    (request as any).validatedApp = app;
 
     return true;
   }
