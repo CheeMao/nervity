@@ -28,23 +28,18 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed } from 'vue';
-
   interface Props {
     size?: number | string;
     viewBox?: string;
+    bgVisible?: boolean;
+    bgColor?: string;
     primaryColor?: string;
     secondaryColor?: string;
-    bgColor?: string;
-    bgVisible?: boolean;
   }
 
   withDefaults(defineProps<Props>(), {
-    size: 40,
+    size: 32,
     viewBox: '0 0 32 32',
-    primaryColor: '',
-    secondaryColor: '',
-    bgColor: '',
     bgVisible: true,
   });
 </script>
