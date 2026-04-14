@@ -42,6 +42,12 @@ export class ResponseEncryptionInterceptor implements NestInterceptor {
     '/cloud/run',
   ];
 
+  // 明文放行的路径（即使命中 encryptedPaths 也不加密）
+  // 这些接口返回的是公开信息、或者调用方（未登录的 GET）无法协商会话密钥，加了也解不开
+  private readonly unencryptedPaths = [
+    '/client/app-info',
+  ];
+
   constructor(
     @Inject(SessionKeyStore) private readonly sessionKeyStore: SessionKeyStore,
   ) {
@@ -63,7 +69,8 @@ export class ResponseEncryptionInterceptor implements NestInterceptor {
     const path = request.route?.path || request.path;
 
     const shouldEncryptPath = this.encryptionEnabled &&
-      this.encryptedPaths.some(p => path.includes(p));
+      this.encryptedPaths.some(p => path.includes(p)) &&
+      !this.unencryptedPaths.some(p => path.includes(p));
 
     return next.handle().pipe(
       map((data) => {
