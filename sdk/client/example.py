@@ -3,41 +3,11 @@
 NetVerify Client SDK 使用示例
 
 演示如何使用 SDK 进行注册、登录、充值、心跳等操作。
+SDK 会自动生成临时 RSA 密钥对用于加密通信，无需手动管理密钥。
 """
 
 import time
 from netverify_client import NetVerifyClient, NetVerifyError, create_client
-
-
-# RSA 私钥（用于解密服务器加密响应）
-RSA_PRIVATE_KEY = """-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCZKG7Hzm+dxl3h
-VRFM0T85SdrEbGIj1AcKhOFY5tWQVAOngXSvBcKwty+27YnHChT5JUJTCfVieVmS
-rQCxigTzSI9jPMxaDsBYO75RBBjdHRm4udemXgBHYjNQ64yyyjy/EyYbsZsdt7ov
-aBisY87bjgX05fuDKZmJDW+iDPikM1FeH46O6+7V3HgnGS1wAORtmDkwbgvf397B
-wcbjwcVtuN2fai3BfoIHdzvDUVjlOPS9Ri1ZMdWXm+g7v608zjzMaEpEvQrAOv50
-W70wQoon7y9PUiU9o285/ZyJDHnTebaEkMVpdP1yUQo0JkNjxXuS1Nw75Wiz/Rnq
-YpXbhugVAgMBAAECggEAQY2bQNz8TBDz7La+1Vy4TVptjuX+6WveaaOvWiBO51v2
-RnMz0JfMGVwGyaqI7o7DpFHMvgMEqtXav1tZ8SNsc/6qFKUYqDEpJXrIvh9dTwKe
-GEE+6n/Qab0/zpJLIdlKv9O/21mc1U7mm1TYPqznhHSY2xW2nZCoHQ+JqNgZchm1
-ZmQvA1vv3AxXZQJhBrO3vQcKdeKTUvUci6anYzMwFQENWh2imZh7LMtSjL2s7VN1
-OiT6gArVg1J1SUxElytotv9EwB7CqZPy3pHytzWxQYbt+JAhpWB+lXFb7w7Y/FA5
-FYXV8C2LKMIWKBjbvUtA0WDILzM0Y4HuksQ2pSkJ3wKBgQDH6CmCYPIRkQcrWlpN
-LPBco6qGmBfaCjSivL3ap6AwxmE9h78xL2cCyxnngfn6E+62NW5oSholcjfJWhF/
-VpS6fJbQjFiNy9uR7ht4ppcrbQmobpS3iXeEnThQAJVPrWq5vHWi0bWFlIZuSwGS
-oFIDby5DOSsPGn4MkNYO0z6EgwKBgQDEIivAswe9MJId1jK0D+Ur5JIKlVVy7tS5
-GC756YEw2HyZA24kvQfewmBpI/Kas0wS2KC6Je2kas6GONPugNzBAtB/JskLc3hy
-8KqfyDROsDw6R7Uk+Iy/dXM8SxxXyKOLFTAy/1GqXCc+I87DK4dPHpWvmBZFL7yX
-OHC4W2wthwKBgQCDd680y0TnQJWScU1Jy/AXPJt9ALFO97899xp0niC/cveoW4nl
-cuMv9xoGInifelRXCDSf6XvgfIkrpkwzjmEpc55LcMEcH6E7C3iNlCF+sarUVkT/
-nyw2zp6mHnwTdlzl4YcLmRbjzpXKGxHhuAW3tHqcQxCKUkXrRaVBArPuuQKBgEAZ
-1ujc2jun4yljNyEITOMCigRxeALfMaDo2XmOKk33gwlTSK0zJp5UMsRKHmEXFlbW
-e/k6qidhTOwrKIC7lupx7AiSeYSHkacnJuyftxC8ooJ9qyNRJFbyoN3kwneiOGkd
-XKpeLaebBKxXcZzx3gAqw8smzqiACIf3x0dJgdqDAoGBAICU2Ddk2lkNOIL1L1X6
-ZxDKcHV/OCNCuQwRuN782Vb0+UR3hz9XgUoG+qwPYDYrbJOrqrPeGy+qq4U1+GwG
-MmT1AK2KztMFXkHrpzYBZAd7rEmzF/L1upS3oXwgfmRMxv/55XjF529Ww9S1ALKT
-dJIr1CZ7+2oj45JaXSAxiBpf
------END PRIVATE KEY-----"""
 
 
 def example_basic_usage():
@@ -49,12 +19,13 @@ def example_basic_usage():
     APP_SECRET = "pbhYcVkxUeblvRIHXkILfjj9GJGiFMeP" # 应用密钥（从后台获取）
     BASE_URL = "http://localhost:3000/api"          # API 地址
 
-    # ============ 1. 初始化客户端（带解密支持） ============
+    # ============ 1. 初始化客户端 ============
+    # SDK 自动生成临时 RSA 密钥对，无需手动传入私钥
+    # 私钥仅存在于内存中，进程退出即销毁
     client = NetVerifyClient(
         base_url=BASE_URL,
         app_id=APP_ID,
-        app_secret=APP_SECRET,      # 用于签名验证
-        rsa_private_key=RSA_PRIVATE_KEY,  # 用于解密服务器响应
+        app_secret=APP_SECRET,
         timeout=30
     )
 
@@ -92,6 +63,8 @@ def example_basic_usage():
             print(f"注册失败: {e}")
 
     # ============ 3. 用户登录 ============
+    # 登录时 SDK 自动将会话公钥发送给服务端
+    # 服务端后续用此公钥加密响应，只有本客户端能解密
     print("\n" + "=" * 50)
     print("3. 用户登录")
     print("=" * 50)
@@ -102,8 +75,8 @@ def example_basic_usage():
         user = data.get("user", {})
         print(f"登录成功!")
         print(f"用户名: {user.get('username')}")
-        print(f"是否有效: {data.get('is_valid')}")  # 新增：快速判断是否可用
-        print(f"状态说明: {data.get('valid_message')}")  # 新增：状态说明
+        print(f"是否有效: {data.get('is_valid')}")
+        print(f"状态说明: {data.get('valid_message')}")
         print(f"到期时间: {data.get('expire_time')}")
         print(f"最大设备数: {user.get('max_devices')}")
     except NetVerifyError as e:
@@ -141,6 +114,8 @@ def example_basic_usage():
         print("(跳过充值示例，请设置有效的卡密)")
 
     # ============ 6. 发送心跳 ============
+    # 心跳成功时 SDK 自动更新 token（服务端返回新 token 续期）
+    # JWT 有效期为 2 小时，通过心跳自动续期
     print("\n" + "=" * 50)
     print("6. 发送心跳")
     print("=" * 50)
@@ -218,20 +193,17 @@ def example_basic_usage():
     except NetVerifyError as e:
         print(f"获取远程变量详情失败: {e}")
 
-    # ============ 8. 执行云函数 ============
+    # ============ 9. 执行云函数 ============
     print("\n" + "=" * 50)
-    print("8. 执行云函数")
+    print("9. 执行云函数")
     print("=" * 50)
-    # 云函数需要在后台配置后才能使用
-    # trigger_name 是在后台创建云函数时设置的触发器名称
     try:
         result = client.run_cloud_function(
-            trigger_name="test_function",  # 后台配置的触发器名称
+            trigger_name="test_function",
             data={"param1": 222, "param2": 123}
         )
         print(f"云函数执行成功!")
         print(result)
-        # 云函数返回值就是 data 字段的值（可能是字符串、数字、对象等）
         print(f"返回结果: {result.get('data')}")
     except NetVerifyError as e:
         print(f"云函数执行失败: {e}")
@@ -272,6 +244,7 @@ def example_heartbeat_loop():
     心跳循环示例
 
     演示如何在循环中发送心跳并处理服务器命令。
+    JWT token 有效期为 2 小时，心跳成功时 SDK 自动续期。
     """
     print("\n" + "=" * 50)
     print("心跳循环示例")
@@ -304,7 +277,7 @@ def example_heartbeat_loop():
                 print(f"收到强制登出命令: {data.get('message')}")
                 break
 
-            # 等待下次心跳
+            # 等待下次心跳（token 已在 heartbeat() 中自动续期）
             interval = data.get("interval", 60)
             print(f"心跳正常，{interval}秒后发送下一次...")
             time.sleep(interval)

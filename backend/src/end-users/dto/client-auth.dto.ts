@@ -29,6 +29,11 @@ export class ClientRegisterDto {
   @IsString()
   @MaxLength(100, { message: "设备名称最多100个字符" })
   device_name?: string;
+
+  @ApiPropertyOptional({ description: "会话 RSA 公钥（PEM 格式，用于加密响应）" })
+  @IsOptional()
+  @IsString()
+  session_public_key?: string;
 }
 
 export class ClientLoginDto {
@@ -56,6 +61,11 @@ export class ClientLoginDto {
   @IsString()
   @MaxLength(100, { message: "设备名称最多100个字符" })
   device_name?: string;
+
+  @ApiPropertyOptional({ description: "会话 RSA 公钥（PEM 格式，用于加密响应）" })
+  @IsOptional()
+  @IsString()
+  session_public_key?: string;
 }
 
 export class ClientHeartbeatDto {

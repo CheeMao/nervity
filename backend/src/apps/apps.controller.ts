@@ -9,10 +9,12 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiQuery, ApiParam } from "@nestjs/swagger";
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiParam } from "@nestjs/swagger";
 import { AppsService } from "./apps.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { Request as RequestObj } from "@nestjs/common";
+import { CreateAppDto } from "./dto/create-app.dto";
+import { UpdateAppDto } from "./dto/update-app.dto";
 
 @ApiTags('应用管理 (Apps)')
 @Controller("apps")
@@ -23,20 +25,10 @@ export class AppsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建应用', description: '创建新应用。非管理员只能创建自己的应用' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: '应用名称' },
-        description: { type: 'string', description: '应用描述' },
-        app_key: { type: 'string', description: '应用密钥（可选）' },
-      },
-      required: ['name'],
-    }
-  })
   @ApiResponse({ status: 201, description: '创建成功' })
+  @ApiResponse({ status: 400, description: '参数校验失败' })
   @ApiResponse({ status: 401, description: '未授权' })
-  create(@Body() createAppDto: any, @RequestObj() req) {
+  create(@Body() createAppDto: CreateAppDto, @RequestObj() req) {
     return this.appsService.create(createAppDto, req.user.userId);
   }
 
@@ -80,21 +72,12 @@ export class AppsController {
   @Put(":id")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: '更新应用', description: '更新应用信息' })
+  @ApiOperation({ summary: '更新应用', description: '更新应用信息（app_secret 不可修改）' })
   @ApiParam({ name: 'id', description: '应用ID', type: 'number' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: '应用名称' },
-        description: { type: 'string', description: '应用描述' },
-        app_key: { type: 'string', description: '应用密钥' },
-      },
-    }
-  })
   @ApiResponse({ status: 200, description: '更新成功' })
+  @ApiResponse({ status: 400, description: '参数校验失败' })
   @ApiResponse({ status: 401, description: '未授权' })
-  update(@Param("id") id: string, @Body() updateAppDto: any) {
+  update(@Param("id") id: string, @Body() updateAppDto: UpdateAppDto) {
     return this.appsService.update(+id, updateAppDto);
   }
 

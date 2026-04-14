@@ -1,6 +1,7 @@
 import { Controller, Request, Post, UseGuards, Body } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from "@nestjs/swagger";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 
@@ -10,8 +11,9 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post("login")
-  @UseGuards(AuthGuard("local"))
-  @ApiOperation({ summary: '用户登录', description: '使用用户名和密码登录系统，如果启用了2FA需要提供验证码' })
+  @UseGuards(ThrottlerGuard, AuthGuard("local"))
+  @Throttle({ login: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({ summary: '用户登录', description: '使用用户名和密码登录系统，如果启用了2FA需要提供验证码。每个 IP 每分钟最多 30 次尝试。' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -30,6 +32,7 @@ export class AuthController {
     },
   }})
   @ApiResponse({ status: 401, description: '认证失败，用户名或密码错误' })
+  @ApiResponse({ status: 429, description: '登录尝试过于频繁' })
   async login(@Request() req, @Body() body) {
     return this.authService.login(req.user, body.code);
   }

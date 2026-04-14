@@ -43,12 +43,32 @@ from typing import Optional, Dict, Any, List
 # 延迟导入加密库（可选依赖）
 try:
     from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     from cryptography.hazmat.backends import default_backend
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
+
+
+def _version_tuple(v: str) -> tuple:
+    """
+    把 "1.2.3" / "v1.2.3" / "1.2.3-beta" 转成可比较的元组，
+    遇到不合法的返回 (0,)，让任何已知版本都大于它。
+    """
+    if not v:
+        return (0,)
+    v = v.strip().lstrip("vV")
+    parts = []
+    for segment in v.split("."):
+        digits = ""
+        for ch in segment:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts) if parts else (0,)
 
 
 class NetVerifyError(Exception):
@@ -58,13 +78,27 @@ class NetVerifyError(Exception):
     当 API 请求失败时抛出此异常。
 
     Attributes:
-        code: 错误码
+        code: 业务错误码（如 50008=token 无效、50003=无权限、40000=参数错）
         message: 错误信息
+        http_status: HTTP 状态码（401/403/404/429/500 等），用于区分限流/下线等场景
     """
-    def __init__(self, code: int, message: str):
+    def __init__(self, code: int, message: str, http_status: Optional[int] = None):
         self.code = code
         self.message = message
+        self.http_status = http_status
         super().__init__(f"[{code}] {message}")
+
+    @property
+    def is_rate_limited(self) -> bool:
+        """HTTP 429：请求过于频繁（触发了速率限制）"""
+        return self.http_status == 429
+
+    @property
+    def is_app_disabled(self) -> bool:
+        """应用已被管理员下线（HTTP 403 + 包含 '应用' 或 '下线' 关键字）"""
+        return self.http_status == 403 and (
+            "应用" in self.message or "下线" in self.message
+        )
 
 
 class ResponseDecryptor:
@@ -203,16 +237,23 @@ class NetVerifyClient:
         self.app_secret = app_secret
         self.timeout = timeout
         self._token: Optional[str] = None
+        self._session_public_key_pem: Optional[str] = None
 
         # 初始化解密器
         self._decryptor = None
         if rsa_private_key:
+            # 兼容模式：使用用户提供的固定私钥
             if not CRYPTO_AVAILABLE:
                 raise ImportError(
                     "使用 rsa_private_key 需要安装 cryptography 库：\n"
                     "pip install cryptography"
                 )
             self._decryptor = ResponseDecryptor(rsa_private_key)
+        elif CRYPTO_AVAILABLE:
+            # 推荐模式：自动生成临时密钥对（私钥仅存在于内存中）
+            private_key_pem, public_key_pem = self._generate_key_pair()
+            self._session_public_key_pem = public_key_pem
+            self._decryptor = ResponseDecryptor(private_key_pem)
 
     @property
     def token(self) -> Optional[str]:
@@ -251,6 +292,30 @@ class NetVerifyClient:
         if with_auth and self._token:
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
+
+    @staticmethod
+    def _generate_key_pair() -> tuple:
+        """
+        生成临时 RSA 密钥对
+
+        Returns:
+            (private_key_pem, public_key_pem) 元组
+        """
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+            backend=default_backend()
+        )
+        private_key_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode('utf-8')
+        public_key_pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+        return private_key_pem, public_key_pem
 
     def _generate_signature(
         self,
@@ -381,7 +446,8 @@ class NetVerifyClient:
             if not response.ok:
                 raise NetVerifyError(
                     response.status_code,
-                    f"HTTP Error: {response.text}"
+                    f"HTTP Error: {response.text}",
+                    http_status=response.status_code,
                 )
             return {"status": response.status_code, "data": response.text}
 
@@ -389,7 +455,8 @@ class NetVerifyClient:
         if "code" in result and result["code"] != 20000:
             raise NetVerifyError(
                 result.get("code", -1),
-                result.get("msg", "Unknown error")
+                result.get("msg", "Unknown error"),
+                http_status=response.status_code,
             )
 
         # 自动解密响应（如果服务器返回加密数据）
@@ -485,7 +552,8 @@ class NetVerifyClient:
         """
         用户注册
 
-        在指定应用中注册新用户账号。
+        在指定应用中注册新用户账号。若应用开启了试用且本次请求带上了 hwid，
+        服务端会按"同一 App + 同一 hwid 仅一次"的规则自动发放试用期。
 
         Args:
             username: 用户名
@@ -493,9 +561,10 @@ class NetVerifyClient:
                 - 同一应用内不能重复
             password: 密码
                 - 最小长度: 6 个字符
-            hwid: 硬件 ID（可选）
+            hwid: 硬件 ID（强烈建议传）
                 - 用于设备绑定
-                - 如不提供，可在后续登录时绑定
+                - **想拿自动发放的试用期必须提供**；不传 hwid 即使应用开了试用也不会发
+                - 同一 App 下同一 hwid 之前领过试用，本次不会再发（账号仍会创建成功）
             device_name: 设备名称（可选）
                 - 用于在设备列表中显示友好名称
                 - 如 "我的电脑"、"办公室电脑" 等
@@ -507,22 +576,46 @@ class NetVerifyClient:
                 "status": 200,
                 "code": 20000,
                 "data": {
-                    "id": 1,           # 用户 ID
-                    "username": "xxx", # 用户名
-                    "app_id": 1,       # 应用 ID
-                    "created_at": "2024-01-01T00:00:00Z"
+                    "id": 1,                              # 用户 ID
+                    "username": "xxx",                    # 用户名
+                    "app_id": 1,                          # 应用 ID
+                    "created_at": "2024-01-01T00:00:00Z",
+
+                    # 试用发放结果（2026-04 起新增）
+                    "trial_granted": True,                # 本次是否拿到试用
+                    "trial_expire_time":                  # 若发放，则为到期时间（ISO 字符串）
+                        "2024-01-02T00:00:00Z",
+                    "trial_message":                      # 可直接展示给用户
+                        "已发放 86400 秒试用"
                 }
             }
             ```
 
+            `trial_message` 的可能值:
+            - `"已发放 N 秒试用"` — 成功
+            - `"应用未开启试用"` — 后台没开试用功能
+            - `"试用需要提供硬件 ID"` — 本次请求没传 hwid
+            - `"此设备已在本应用使用过试用"` — 同一 hwid 已领过
+
         Raises:
             NetVerifyError: 注册失败时抛出
-                - 用户名已存在
-                - 参数验证失败
+                - 用户名已存在 → `code=40000`
+                - 应用不存在 → `code=40000`
+                - 应用已被下线 → `code=50003, http_status=403, e.is_app_disabled=True`
+                - 参数验证失败 → `code=40000`
+                - 注册频率超限 → `http_status=429, e.is_rate_limited=True`（每个 IP 每分钟最多 5 次）
 
         Example:
-            >>> client.register("myuser", "mypassword", "DEVICE-HWID-001", "我的电脑")
-            {'data': {'id': 1, 'username': 'myuser', ...}}
+            >>> resp = client.register(
+            ...     "myuser", "mypassword",
+            ...     hwid="DEVICE-HWID-001",
+            ...     device_name="我的电脑"
+            ... )
+            >>> d = resp["data"]
+            >>> print(d["trial_message"])
+            已发放 86400 秒试用
+            >>> if d["trial_granted"]:
+            ...     print(f"试用到期时间: {d['trial_expire_time']}")
         """
         data = {
             "username": username,
@@ -533,6 +626,8 @@ class NetVerifyClient:
             data["hwid"] = hwid
         if device_name:
             data["device_name"] = device_name
+        if self._session_public_key_pem:
+            data["session_public_key"] = self._session_public_key_pem
 
         return self._request("POST", "/client/register", data=data)
 
@@ -613,6 +708,9 @@ class NetVerifyClient:
         }
         if device_name:
             data["device_name"] = device_name
+        # 发送会话公钥，服务端用它加密后续响应
+        if self._session_public_key_pem:
+            data["session_public_key"] = self._session_public_key_pem
 
         result = self._request("POST", "/client/login", data=data)
 
@@ -831,7 +929,14 @@ class NetVerifyClient:
         data = {"hwid": hwid}
         if device_name:
             data["device_name"] = device_name
-        return self._request("PUT", "/client/heartbeat", data=data, with_auth=True)
+        result = self._request("PUT", "/client/heartbeat", data=data, with_auth=True)
+
+        # 自动续期：心跳成功时服务端返回新 token
+        new_token = result.get("data", {}).get("new_token")
+        if new_token:
+            self._token = new_token
+
+        return result
 
     # ==================== 远程变量 ====================
 
@@ -1042,16 +1147,16 @@ class NetVerifyClient:
         app_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        获取应用详情
+        获取应用公开信息（无需登录即可调用）
 
-        获取指定应用的基本信息和配置，包括版本号、下载地址等。
+        调用 `/client/app-info/:appId`，只返回公开安全的字段，
+        **不包含** `app_secret` 等敏感信息。适合 SDK 启动时拉取
+        最新版本、公告、更新地址等做自检/强升判断。
 
         Args:
-            app_id: 应用 ID（可选）
-                - 默认使用初始化时设置的 app_id
+            app_id: 应用 ID（可选），默认用初始化时的 app_id
 
         Returns:
-            应用详情响应:
             ```python
             {
                 "status": 200,
@@ -1059,41 +1164,107 @@ class NetVerifyClient:
                 "data": {
                     "id": 1,
                     "name": "我的应用",
-                    "app_secret": "xxx",        # 应用密钥
 
-                    # 版本和更新相关
-                    "version": "1.0.0",         # 当前版本号
-                    "download_url": "https://example.com/download/app.zip",  # 下载地址
-                    "force_update": False,      # 是否强制更新
+                    # 版本 / 更新
+                    "version": "1.2.0",                  # 最新版本号
+                    "min_supported_version": "1.0.0",    # 最低兼容版本（null = 无门槛）
+                    "release_channel": "stable",         # 发布通道 stable/beta/dev
+                    "download_url": "https://.../app.zip",
+                    "force_update": False,
 
-                    # 心跳配置
-                    "heart_interval": 60,       # 心跳间隔（秒）
-                    "heartbeat_timeout_multiplier": 3,  # 心跳超时倍数
+                    # 公告
+                    "announcement": "本周维护 23:00-24:00",
 
-                    # 试用配置
-                    "trial_enabled": True,      # 是否启用试用
-                    "trial_duration": 86400,    # 试用时长（秒）
-                    "trial_device_limit": 1,    # 试用设备数限制
+                    # 心跳
+                    "heart_interval": 60,
+                    "heartbeat_timeout_multiplier": 3,
 
-                    # 状态
-                    "is_active": True,          # 是否启用
-                    "created_at": "2024-01-01T00:00:00Z",
-                    "updated_at": "2024-01-01T00:00:00Z"
+                    # 运行状态
+                    "is_active": True,
+
+                    # 扩展配置（任意 JSON 对象或 null）
+                    "metadata": {"welcomeMessage": "欢迎"}
                 }
             }
             ```
 
+        Raises:
+            NetVerifyError: 应用不存在时抛出 404
+
         Example:
-            >>> result = client.get_app_info()
-            >>> app = result["data"]
-            >>> print(f"应用名: {app['name']}")
-            >>> print(f"版本: {app['version']}")
-            >>> print(f"下载地址: {app['download_url']}")
-            >>> if app['force_update']:
-            ...     print("需要强制更新！")
+            >>> info = client.get_app_info()["data"]
+            >>> if not info["is_active"]:
+            ...     raise RuntimeError("应用已下线，无法使用")
+            >>> if info.get("announcement"):
+            ...     print("📢", info["announcement"])
         """
         app_id = app_id or self.app_id
-        return self._request("GET", f"/apps/{app_id}")
+        return self._request("GET", f"/client/app-info/{app_id}")
+
+    def check_update(
+        self,
+        current_version: str,
+        app_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        检查当前 SDK / 客户端版本是否需要升级
+
+        拉取 `/client/app-info`，对比传入的本地版本号：
+        - 低于 `min_supported_version` → **强制升级**
+        - 低于 `version` 但高于等于 `min_supported_version` → **可选升级**
+        - 其它 → 无需升级
+
+        Args:
+            current_version: 客户端当前版本号（例如 "1.1.0"）
+            app_id: 应用 ID，默认用初始化时的 app_id
+
+        Returns:
+            ```python
+            {
+                "need_upgrade": True,         # 是否有更新
+                "force_upgrade": False,       # 是否必须升级才能继续使用
+                "current_version": "1.1.0",
+                "latest_version": "1.2.0",
+                "min_supported_version": "1.0.0",
+                "download_url": "https://.../app.zip",
+                "announcement": "本次新增 XX 功能",
+                "release_channel": "stable"
+            }
+            ```
+
+        Raises:
+            NetVerifyError: 应用不存在或网络错误
+
+        Example:
+            >>> r = client.check_update("1.1.0")
+            >>> if r["force_upgrade"]:
+            ...     print(f"必须升级到 {r['latest_version']}: {r['download_url']}")
+            ...     sys.exit(1)
+            >>> elif r["need_upgrade"]:
+            ...     print(f"有新版本 {r['latest_version']}，建议升级")
+        """
+        info_resp = self.get_app_info(app_id=app_id)
+        app = info_resp.get("data") or {}
+        latest = app.get("version") or ""
+        min_v = app.get("min_supported_version")
+
+        current_t = _version_tuple(current_version)
+        latest_t = _version_tuple(latest)
+        min_t = _version_tuple(min_v) if min_v else None
+
+        force_upgrade = bool(min_t and current_t < min_t)
+        need_upgrade = force_upgrade or (current_t < latest_t)
+
+        return {
+            "need_upgrade": need_upgrade,
+            "force_upgrade": force_upgrade,
+            "current_version": current_version,
+            "latest_version": latest,
+            "min_supported_version": min_v,
+            "download_url": app.get("download_url"),
+            "announcement": app.get("announcement"),
+            "release_channel": app.get("release_channel"),
+        }
 
     # ==================== 工具方法 ====================
 

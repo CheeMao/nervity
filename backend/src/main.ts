@@ -2,6 +2,7 @@
 process.env.TZ = 'Asia/Shanghai';
 
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
@@ -9,8 +10,13 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { ValidationPipe } from "@nestjs/common";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix("api");
+
+  // 信任反向代理（nginx）传来的 X-Forwarded-For / X-Real-IP，
+  // 否则 ThrottlerGuard 看到的全是 nginx 的 IP，限流会按"代理机器"共用一个桶。
+  // 1 = 信任最近的一跳代理；多层代理时调大。
+  app.set("trust proxy", 1);
 
   // Enable global validation pipe for DTO validation
   app.useGlobalPipes(new ValidationPipe({

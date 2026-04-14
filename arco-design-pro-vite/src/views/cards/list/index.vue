@@ -106,7 +106,7 @@
         </a-col>
         <a-col :span="12" style="display: flex; justify-content: end">
           <a-space>
-            <a-button :loading="exportLoading" @click="handleExport">
+            <a-button :loading="exportLoading" @click="openExportModal">
               <template #icon><icon-download /></template>
               {{ $t('cards.operation.export') }}
             </a-button>
@@ -272,6 +272,73 @@
           />
         </a-form-item>
       </a-form>
+    </a-modal>
+
+    <!-- 导出范围选择弹窗 -->
+    <a-modal
+      v-model:visible="exportModalVisible"
+      :title="$t('cards.export.modal.title')"
+      :ok-loading="exportLoading"
+      :width="440"
+      @ok="handleExportConfirm"
+      @cancel="exportModalVisible = false"
+    >
+      <a-radio-group v-model="exportScope" direction="vertical">
+        <a-radio value="current">
+          <div>
+            <div>{{ $t('cards.export.scope.current') }}</div>
+            <div style="color: #86909c; font-size: 12px">
+              {{
+                $t('cards.export.scope.currentDesc', {
+                  page: pagination.current,
+                  size: pagination.pageSize,
+                })
+              }}
+            </div>
+          </div>
+        </a-radio>
+        <a-radio value="all">
+          <div>
+            <div>{{ $t('cards.export.scope.all') }}</div>
+            <div style="color: #86909c; font-size: 12px">
+              {{ $t('cards.export.scope.allDesc') }}
+            </div>
+          </div>
+        </a-radio>
+      </a-radio-group>
+    </a-modal>
+
+    <!-- 生成结果弹窗 -->
+    <a-modal
+      v-model:visible="resultModalVisible"
+      :title="$t('cards.generate.result.title')"
+      :width="560"
+      :footer="false"
+      @cancel="resultModalVisible = false"
+    >
+      <div style="margin-bottom: 12px; color: #86909c">
+        {{
+          $t('cards.generate.result.subtitle', {
+            count: generatedCards.length,
+          })
+        }}
+      </div>
+      <a-textarea
+        :model-value="generatedCards.map((c) => c.code).join('\n')"
+        :auto-size="{ minRows: 6, maxRows: 12 }"
+        readonly
+      />
+      <div style="margin-top: 16px; text-align: right">
+        <a-space>
+          <a-button @click="resultModalVisible = false">
+            {{ $t('cards.generate.result.close') }}
+          </a-button>
+          <a-button type="primary" @click="handleCopyAll">
+            <template #icon><icon-copy /></template>
+            {{ $t('cards.generate.result.copyAll') }}
+          </a-button>
+        </a-space>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -577,6 +644,9 @@
     resetForm();
   };
 
+  const resultModalVisible = ref(false);
+  const generatedCards = ref<CardRecord[]>([]);
+
   const handleSubmit = async () => {
     const valid = await formRef.value?.validate();
     if (valid) return;
@@ -590,27 +660,35 @@
     try {
       const submitData = { ...formData };
 
-      // If card_type_id is selected, backend handles value.
-      // But we can send it anyway or let backend override.
-      // If NOT using card type (custom duration - admin only?), we send value.
-      // Implementation Plan: "Developers must first create Card Types... Agents will select Card Type".
-      // Let's assume Card Type is mandatory for now, or fallback to value if admin.
-      // For simplicity based on Plan: require card_type_id.
+      const res = (await generateCards(submitData)) as unknown as {
+        data: CardRecord[];
+      };
+      const cards = Array.isArray(res?.data) ? res.data : [];
 
-      // Remove value from submit if using card type to avoid confusion,
-      // though backend logic prioritizes card_type_id.
-
-      await generateCards(submitData);
       Message.success(t('cards.message.generateSuccess'));
       modalVisible.value = false;
       resetForm();
       fetchData();
-      // Refresh user info to update balance
       userStore.info();
+
+      if (cards.length > 0) {
+        generatedCards.value = cards;
+        resultModalVisible.value = true;
+      }
     } catch (err) {
       // handle error
     } finally {
       modalLoading.value = false;
+    }
+  };
+
+  const handleCopyAll = async () => {
+    const text = generatedCards.value.map((c) => c.code).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      Message.success(t('cards.message.copySuccess'));
+    } catch {
+      Message.error(t('cards.message.copyFail'));
     }
   };
 
@@ -644,19 +722,31 @@
     }
   };
 
-  const handleExport = async () => {
+  const exportModalVisible = ref(false);
+  const exportScope = ref<'current' | 'all'>('current');
+
+  const openExportModal = () => {
+    exportScope.value = 'current';
+    exportModalVisible.value = true;
+  };
+
+  const handleExportConfirm = async () => {
     exportLoading.value = true;
     try {
       const params = new URLSearchParams();
       if (searchForm.status) params.append('status', searchForm.status);
       if (searchForm.app_id) params.append('app_id', String(searchForm.app_id));
+      if (exportScope.value === 'current') {
+        params.append('page', String(pagination.current));
+        params.append('pageSize', String(pagination.pageSize));
+      }
 
-      // 响应拦截器会返回 response.data，所以这里 response 就是 Blob
-      const blob = await axios.get(`/cards/export?${params.toString()}`, {
+      // 响应拦截器返回 response.data，此处 blob 本身即是 Blob 实例
+      const blob = (await axios.get(`/cards/export?${params.toString()}`, {
         responseType: 'blob',
-      });
+      })) as unknown as Blob;
 
-      const url = window.URL.createObjectURL(new Blob([blob.data]));
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `cards_${Date.now()}.xlsx`);
@@ -665,8 +755,9 @@
       link.remove();
       window.URL.revokeObjectURL(url);
       Message.success(t('cards.message.exportSuccess'));
+      exportModalVisible.value = false;
     } catch (err) {
-      // error
+      Message.error(t('cards.message.exportFail'));
     } finally {
       exportLoading.value = false;
     }

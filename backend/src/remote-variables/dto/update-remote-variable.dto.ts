@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from "class-validator";
+import { IsString, IsNumber, IsOptional } from "class-validator";
 
 export class UpdateRemoteVariableDto {
   @IsOptional()
@@ -12,4 +12,8 @@ export class UpdateRemoteVariableDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsNumber()
+  app_id?: number;
 }

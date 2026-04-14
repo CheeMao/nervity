@@ -13,6 +13,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiQuery, ApiParam } from "@nestjs/swagger";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { Response } from "express";
 import { CardsService } from "./cards.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -106,9 +107,14 @@ export class CardsController {
   }
 
   @Post("redeem")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @Throttle({ redeem: { limit: 10, ttl: 60_000 } })
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: '兑换卡密', description: '用户兑换卡密。必须登录，充值到当前登录用户' })
+  @ApiOperation({
+    summary: '兑换卡密',
+    description:
+      '用户兑换卡密。必须登录，充值到当前登录用户。每个 IP 每分钟最多尝试 10 次，超限返回 429。',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -122,6 +128,7 @@ export class CardsController {
   @ApiResponse({ status: 200, description: '兑换成功' })
   @ApiResponse({ status: 400, description: '卡密无效或已使用' })
   @ApiResponse({ status: 401, description: '未登录' })
+  @ApiResponse({ status: 429, description: '请求过于频繁' })
   async redeem(@Body() body: { code: string; hwid?: string }, @Request() req) {
     // 必须登录，使用当前登录用户的 userId
     try {
@@ -183,10 +190,14 @@ export class CardsController {
   async export(
     @Query("status") status: string,
     @Query("app_id") appId: string,
+    @Query("page") page: string,
+    @Query("pageSize") pageSize: string,
     @RequestObj() req,
     @Res() res: Response,
   ) {
     const appIdNum = appId ? parseInt(appId, 10) : undefined;
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 10000;
 
     const currentUser = req.user ? {
       id: req.user.userId,
@@ -196,10 +207,9 @@ export class CardsController {
       parent_id: req.user.parent_id,
     } : undefined;
 
-    // 获取所有数据（不分页）
     const { list } = await this.cardsService.findAllPaginated(
-      1,
-      10000,
+      pageNum,
+      pageSizeNum,
       status,
       appIdNum,
       currentUser,

@@ -22,6 +22,12 @@ export class App {
   @Column({ default: "1.0.0" })
   version: string;
 
+  @Column({ type: "varchar", length: 50, nullable: true })
+  min_supported_version: string; // SDK 低于此版本将被拒绝/强制升级，null = 不做版本门槛
+
+  @Column({ type: "varchar", length: 20, default: "stable" })
+  release_channel: string; // 发布通道：stable / beta / dev
+
   @Column({ nullable: true })
   download_url: string;
 
@@ -53,6 +59,9 @@ export class App {
 
   @Column({ default: true })
   agent_visible: boolean; // 是否向代理商开放
+
+  @Column({ type: "json", nullable: true })
+  metadata: Record<string, any>; // 扩展配置字段，自由存 JSON，避免小改动都要加列
 
   @CreateDateColumn()
   created_at: Date;

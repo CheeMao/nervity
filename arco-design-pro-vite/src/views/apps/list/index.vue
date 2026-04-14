@@ -111,7 +111,8 @@
         isEdit ? $t('apps.modal.editTitle') : $t('apps.modal.createTitle')
       "
       :ok-loading="modalLoading"
-      :width="600"
+      :width="640"
+      :body-style="{ padding: '0 20px 16px' }"
       @ok="handleSubmit"
       @cancel="handleModalCancel"
     >
@@ -121,137 +122,221 @@
         :rules="formRules"
         layout="vertical"
       >
-        <!-- 基本信息 -->
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item field="name" :label="$t('apps.form.name')">
-              <a-input
-                v-model="formData.name"
-                :placeholder="$t('apps.form.name.placeholder')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="!isEdit" :span="12">
-            <a-form-item field="app_secret" :label="$t('apps.form.appSecret')">
-              <a-input
-                v-model="formData.app_secret"
-                :placeholder="$t('apps.form.appSecret.placeholder')"
-              >
-                <template #append>
-                  <a-button type="text" @click="generateSecret">
-                    <icon-refresh />
-                  </a-button>
-                </template>
-              </a-input>
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item field="version" :label="$t('apps.form.version')">
-              <a-input v-model="formData.version" placeholder="1.0.0" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item
-              field="heart_interval"
-              :label="$t('apps.form.heartInterval')"
-            >
-              <a-input-number
-                v-model="formData.heart_interval"
-                :min="10"
-                :max="3600"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-form-item field="download_url" :label="$t('apps.form.downloadUrl')">
-          <a-input v-model="formData.download_url" placeholder="https://..." />
-        </a-form-item>
-
-        <a-row :gutter="16">
-          <a-col :span="8">
-            <a-form-item
-              field="force_update"
-              :label="$t('apps.form.forceUpdate')"
-            >
-              <a-switch v-model="formData.force_update" />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="isEdit" :span="8">
-            <a-form-item field="is_active" :label="$t('apps.form.isActive')">
-              <a-switch v-model="formData.is_active" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="8">
-            <a-form-item field="agent_visible">
-              <template #label>
-                <span>{{ $t('apps.form.agentVisible') }}</span>
-                <a-tooltip :content="$t('apps.form.agentVisible.help')">
-                  <icon-question-circle
-                    style="margin-left: 4px; color: var(--color-text-3)"
+        <a-tabs v-model:active-key="activeTab" type="rounded" size="small">
+          <!-- Tab 1: 基础 -->
+          <a-tab-pane key="basic" :title="$t('apps.tabs.basic')">
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item field="name" :label="$t('apps.form.name')">
+                  <a-input
+                    v-model="formData.name"
+                    :placeholder="$t('apps.form.name.placeholder')"
                   />
-                </a-tooltip>
-              </template>
-              <a-switch v-model="formData.agent_visible" />
-            </a-form-item>
-          </a-col>
-        </a-row>
+                </a-form-item>
+              </a-col>
+              <a-col v-if="!isEdit" :span="12">
+                <a-form-item
+                  field="app_secret"
+                  :label="$t('apps.form.appSecret')"
+                >
+                  <a-input
+                    v-model="formData.app_secret"
+                    :placeholder="$t('apps.form.appSecret.placeholder')"
+                  >
+                    <template #append>
+                      <a-button type="text" @click="generateSecret">
+                        <icon-refresh />
+                      </a-button>
+                    </template>
+                  </a-input>
+                </a-form-item>
+              </a-col>
+            </a-row>
 
-        <!-- 试用配置 -->
-        <a-divider>{{ $t('apps.form.trialConfig') }}</a-divider>
-        <a-row :gutter="16">
-          <a-col :span="8">
+            <a-form-item
+              field="download_url"
+              :label="$t('apps.form.downloadUrl')"
+            >
+              <a-input
+                v-model="formData.download_url"
+                placeholder="https://..."
+              />
+            </a-form-item>
+
+            <a-row :gutter="16">
+              <a-col v-if="isEdit" :span="12">
+                <a-form-item
+                  field="is_active"
+                  :label="$t('apps.form.isActive')"
+                >
+                  <a-switch v-model="formData.is_active" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item field="agent_visible">
+                  <template #label>
+                    <span>{{ $t('apps.form.agentVisible') }}</span>
+                    <a-tooltip :content="$t('apps.form.agentVisible.help')">
+                      <icon-question-circle
+                        style="margin-left: 4px; color: var(--color-text-3)"
+                      />
+                    </a-tooltip>
+                  </template>
+                  <a-switch v-model="formData.agent_visible" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-tab-pane>
+
+          <!-- Tab 2: 更新与心跳 -->
+          <a-tab-pane key="version" :title="$t('apps.tabs.version')">
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item field="version" :label="$t('apps.form.version')">
+                  <a-input v-model="formData.version" placeholder="1.0.0" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item
+                  field="min_supported_version"
+                  :label="$t('apps.form.minSupportedVersion')"
+                  :tooltip="$t('apps.form.minSupportedVersion.help')"
+                >
+                  <a-input
+                    v-model="formData.min_supported_version"
+                    placeholder="1.0.0"
+                    allow-clear
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item
+                  field="release_channel"
+                  :label="$t('apps.form.releaseChannel')"
+                >
+                  <a-select v-model="formData.release_channel">
+                    <a-option value="stable">
+                      {{ $t('apps.form.releaseChannel.stable') }}
+                    </a-option>
+                    <a-option value="beta">
+                      {{ $t('apps.form.releaseChannel.beta') }}
+                    </a-option>
+                    <a-option value="dev">
+                      {{ $t('apps.form.releaseChannel.dev') }}
+                    </a-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item
+                  field="force_update"
+                  :label="$t('apps.form.forceUpdate')"
+                >
+                  <a-switch v-model="formData.force_update" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item
+                  field="heart_interval"
+                  :label="$t('apps.form.heartInterval')"
+                >
+                  <a-input-number
+                    v-model="formData.heart_interval"
+                    :min="5"
+                    :max="3600"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item
+                  field="heartbeat_timeout_multiplier"
+                  :label="$t('apps.form.heartbeatMultiplier')"
+                  :tooltip="$t('apps.form.heartbeatMultiplier.help')"
+                >
+                  <a-input-number
+                    v-model="formData.heartbeat_timeout_multiplier"
+                    :min="1"
+                    :max="20"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-tab-pane>
+
+          <!-- Tab 3: 试用 -->
+          <a-tab-pane key="trial" :title="$t('apps.tabs.trial')">
             <a-form-item
               field="trial_enabled"
               :label="$t('apps.form.trialEnabled')"
             >
               <a-switch v-model="formData.trial_enabled" />
             </a-form-item>
-          </a-col>
-          <a-col v-if="formData.trial_enabled" :span="8">
-            <a-form-item
-              field="trial_duration"
-              :label="$t('apps.form.trialDuration')"
-            >
-              <a-input-number
-                v-model="formData.trial_duration"
-                :min="60"
-                :max="86400 * 30"
-                :placeholder="$t('apps.form.trialDuration.placeholder')"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col v-if="formData.trial_enabled" :span="8">
-            <a-form-item
-              field="trial_device_limit"
-              :label="$t('apps.form.trialDeviceLimit')"
-            >
-              <a-input-number
-                v-model="formData.trial_device_limit"
-                :min="1"
-                :max="10"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item v-if="formData.trial_enabled">
-          <template #extra>
-            {{ $t('apps.form.trialDuration.help') }}
-          </template>
-        </a-form-item>
+            <a-row v-if="formData.trial_enabled" :gutter="16">
+              <a-col :span="12">
+                <a-form-item
+                  field="trial_duration"
+                  :label="$t('apps.form.trialDuration')"
+                  :extra="$t('apps.form.trialDuration.help')"
+                >
+                  <a-input-number
+                    v-model="formData.trial_duration"
+                    :min="60"
+                    :max="86400 * 30"
+                    :placeholder="$t('apps.form.trialDuration.placeholder')"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item
+                  field="trial_device_limit"
+                  :label="$t('apps.form.trialDeviceLimit')"
+                >
+                  <a-input-number
+                    v-model="formData.trial_device_limit"
+                    :min="1"
+                    :max="10"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-tab-pane>
 
-        <!-- 其他配置 -->
-        <a-divider>{{ $t('apps.form.otherConfig') }}</a-divider>
-        <a-form-item field="announcement" :label="$t('apps.form.announcement')">
-          <a-textarea
-            v-model="formData.announcement"
-            :placeholder="$t('apps.form.announcement.placeholder')"
-            :auto-size="{ minRows: 3, maxRows: 6 }"
-          />
-        </a-form-item>
+          <!-- Tab 4: 扩展 -->
+          <a-tab-pane key="extra" :title="$t('apps.tabs.extra')">
+            <a-form-item
+              field="announcement"
+              :label="$t('apps.form.announcement')"
+            >
+              <a-textarea
+                v-model="formData.announcement"
+                :placeholder="$t('apps.form.announcement.placeholder')"
+                :auto-size="{ minRows: 2, maxRows: 4 }"
+              />
+            </a-form-item>
+
+            <a-form-item
+              field="metadata_text"
+              :label="$t('apps.form.metadata')"
+              :tooltip="$t('apps.form.metadata.help')"
+            >
+              <a-textarea
+                v-model="metadataText"
+                :placeholder="metadataPlaceholder"
+                :auto-size="{ minRows: 3, maxRows: 6 }"
+              />
+            </a-form-item>
+          </a-tab-pane>
+        </a-tabs>
       </a-form>
     </a-modal>
   </div>
@@ -342,6 +427,15 @@
   const isEdit = ref(false);
   const editingId = ref<number | null>(null);
   const formRef = ref();
+  const activeTab = ref('basic');
+
+  // metadata 用字符串绑定 textarea，提交时再 parse 成对象
+  const metadataText = ref('');
+  // placeholder 不走 $t()，避免 JSON 里的 { false } 被 vue-i18n 当成变量插值
+  const metadataPlaceholder = `{
+  "welcomeMessage": "欢迎使用",
+  "maintenance": false
+}`;
 
   const formData = reactive<
     CreateAppData & {
@@ -356,8 +450,11 @@
     name: '',
     app_secret: '',
     version: '1.0.0',
+    min_supported_version: '',
+    release_channel: 'stable',
     download_url: '',
     heart_interval: 60,
+    heartbeat_timeout_multiplier: 3,
     force_update: false,
     is_active: true,
     trial_enabled: false,
@@ -431,8 +528,11 @@
     formData.name = '';
     formData.app_secret = '';
     formData.version = '1.0.0';
+    formData.min_supported_version = '';
+    formData.release_channel = 'stable';
     formData.download_url = '';
     formData.heart_interval = 60;
+    formData.heartbeat_timeout_multiplier = 3;
     formData.force_update = false;
     formData.is_active = true;
     formData.trial_enabled = false;
@@ -440,6 +540,7 @@
     formData.trial_device_limit = 1;
     formData.announcement = '';
     formData.agent_visible = true;
+    metadataText.value = '';
   };
 
   const handleCreate = () => {
@@ -447,6 +548,7 @@
     generateSecret();
     isEdit.value = false;
     editingId.value = null;
+    activeTab.value = 'basic';
     modalVisible.value = true;
   };
 
@@ -454,8 +556,12 @@
     formData.name = record.name;
     formData.app_secret = record.app_secret;
     formData.version = record.version;
+    formData.min_supported_version = record.min_supported_version || '';
+    formData.release_channel = record.release_channel || 'stable';
     formData.download_url = record.download_url || '';
     formData.heart_interval = record.heart_interval;
+    formData.heartbeat_timeout_multiplier =
+      record.heartbeat_timeout_multiplier ?? 3;
     formData.force_update = record.force_update;
     formData.is_active = record.is_active;
     formData.trial_enabled = record.trial_enabled || false;
@@ -463,8 +569,12 @@
     formData.trial_device_limit = record.trial_device_limit || 1;
     formData.announcement = record.announcement || '';
     formData.agent_visible = record.agent_visible !== false;
+    metadataText.value = record.metadata
+      ? JSON.stringify(record.metadata, null, 2)
+      : '';
     isEdit.value = true;
     editingId.value = record.id;
+    activeTab.value = 'basic';
     modalVisible.value = true;
   };
 
@@ -473,9 +583,36 @@
     resetForm();
   };
 
+  const parseMetadata = (): {
+    ok: boolean;
+    value: Record<string, any> | null;
+  } => {
+    const raw = metadataText.value.trim();
+    if (!raw) return { ok: true, value: null };
+    try {
+      const parsed = JSON.parse(raw);
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        return { ok: false, value: null };
+      }
+      return { ok: true, value: parsed };
+    } catch {
+      return { ok: false, value: null };
+    }
+  };
+
   const handleSubmit = async () => {
     const valid = await formRef.value?.validate();
     if (valid) return;
+
+    const meta = parseMetadata();
+    if (!meta.ok) {
+      Message.error(t('apps.form.metadata.invalid'));
+      return;
+    }
 
     modalLoading.value = true;
     try {
@@ -483,8 +620,11 @@
         const updateData: UpdateAppData = {
           name: formData.name,
           version: formData.version,
+          min_supported_version: formData.min_supported_version || null,
+          release_channel: formData.release_channel,
           download_url: formData.download_url,
           heart_interval: formData.heart_interval,
+          heartbeat_timeout_multiplier: formData.heartbeat_timeout_multiplier,
           force_update: formData.force_update,
           is_active: formData.is_active,
           trial_enabled: formData.trial_enabled,
@@ -492,11 +632,16 @@
           trial_device_limit: formData.trial_device_limit,
           announcement: formData.announcement,
           agent_visible: formData.agent_visible,
+          metadata: meta.value,
         };
         await updateApp(editingId.value, updateData);
         Message.success(t('apps.message.updateSuccess'));
       } else {
-        await createApp(formData);
+        await createApp({
+          ...formData,
+          min_supported_version: formData.min_supported_version || null,
+          metadata: meta.value,
+        });
         Message.success(t('apps.message.createSuccess'));
       }
       modalVisible.value = false;

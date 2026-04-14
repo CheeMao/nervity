@@ -1,6 +1,6 @@
 export default {
-  'menu.users': '用户管理',
-  'menu.users.list': '用户列表',
+  'menu.users': '代理商管理',
+  'menu.users.list': '代理商列表',
   'users.form.search.placeholder': '搜索用户名',
   'users.form.search.remark.placeholder': '搜索备注',
   'users.columns.id': 'ID',

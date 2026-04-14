@@ -1,6 +1,6 @@
 export default {
-  'menu.users': 'User Management',
-  'menu.users.list': 'User List',
+  'menu.users': 'Agent Management',
+  'menu.users.list': 'Agent List',
   'users.form.search.placeholder': 'Search username',
   'users.form.search.remark.placeholder': 'Search remark',
   'users.columns.id': 'ID',

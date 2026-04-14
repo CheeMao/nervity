@@ -2,6 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Like, DataSource, In } from "typeorm";
 import { App } from "./entities/app.entity";
+import { CreateAppDto } from "./dto/create-app.dto";
+import { UpdateAppDto } from "./dto/update-app.dto";
 import { DataPermissionService, CurrentUser } from "../common/services/data-permission.service";
 
 @Injectable()
@@ -13,7 +15,7 @@ export class AppsService {
     private dataPermissionService: DataPermissionService,
   ) { }
 
-  create(createAppDto: any, creatorId?: number) {
+  create(createAppDto: CreateAppDto, creatorId?: number) {
     return this.appsRepository.save(
       this.appsRepository.create({
         ...createAppDto,
@@ -68,19 +70,8 @@ export class AppsService {
     return this.appsRepository.findOne({ where: { app_secret: secret } });
   }
 
-  async update(id: number, updateAppDto: any) {
-    console.log("=== Update App Debug ===");
-    console.log("ID:", id);
-    console.log("DTO:", JSON.stringify(updateAppDto, null, 2));
-
-    try {
-      await this.appsRepository.update(id, updateAppDto);
-    } catch (error) {
-      console.error("=== Update Error ===");
-      console.error(error);
-      throw error;
-    }
-
+  async update(id: number, updateAppDto: UpdateAppDto) {
+    await this.appsRepository.update(id, updateAppDto);
     return this.findOne(id);
   }
 

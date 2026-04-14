@@ -1,11 +1,20 @@
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { PassportStrategy } from "@nestjs/passport";
-import { Injectable } from "@nestjs/common";
+import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { EndUser } from "../../end-users/entities/end-user.entity";
+import { SessionKeyStore } from "../../common/services/session-key.store";
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    @InjectRepository(EndUser)
+    private endUserRepository: Repository<EndUser>,
+    private sessionKeyStore: SessionKeyStore,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -14,6 +23,31 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    // 终端用户：检查账户状态和吊销
+    if (payload.type === "end_user") {
+      // 检查是否被主动吊销
+      if (this.sessionKeyStore.isRevoked(payload.sub)) {
+        throw new UnauthorizedException("登录已失效，请重新登录");
+      }
+
+      // 查库确认用户状态
+      const user = await this.endUserRepository.findOne({
+        where: { id: payload.sub },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException("用户不存在");
+      }
+
+      if (!user.is_active) {
+        throw new UnauthorizedException("账户已被禁用");
+      }
+
+      if (user.expire_time && new Date(user.expire_time) < new Date()) {
+        throw new UnauthorizedException("授权已过期");
+      }
+    }
+
     // 支持两种用户类型：管理后台用户 (role) 和终端用户 (type: end_user)
     return {
       id: payload.sub,

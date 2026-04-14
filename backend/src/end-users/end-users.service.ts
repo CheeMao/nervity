@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Like, FindOptionsWhere, In } from "typeorm";
 import * as bcrypt from "bcrypt";
@@ -14,6 +14,7 @@ import { Card } from "../cards/entities/card.entity";
 import { AdminRole } from "../users/entities/user.entity";
 import { nowCN } from "../common/utils/timezone";
 import { CurrentUser } from "../common/services/data-permission.service";
+import { SessionKeyStore } from "../common/services/session-key.store";
 
 @Injectable()
 export class EndUsersService {
@@ -27,6 +28,7 @@ export class EndUsersService {
     @InjectRepository(Card)
     private cardsRepository: Repository<Card>,
     private jwtService: JwtService,
+    private sessionKeyStore: SessionKeyStore,
   ) { }
 
   async create(createEndUserDto: CreateEndUserDto): Promise<EndUser> {
@@ -138,7 +140,18 @@ export class EndUsersService {
 
     const endUser = await this.findOne(id);
     Object.assign(endUser, updateEndUserDto);
-    return await this.endUsersRepository.save(endUser);
+    const saved = await this.endUsersRepository.save(endUser);
+
+    // 如果禁用了用户，主动吊销其 token
+    if (updateEndUserDto.is_active === false) {
+      this.sessionKeyStore.revokeUser(id);
+    }
+    // 如果重新启用了用户，取消吊销
+    if (updateEndUserDto.is_active === true) {
+      this.sessionKeyStore.unrevokeUser(id);
+    }
+
+    return saved;
   }
 
   async remove(id: number): Promise<void> {
@@ -184,7 +197,25 @@ export class EndUsersService {
 
   // ==================== 客户端认证方法 ====================
 
-  async clientRegister(dto: ClientRegisterDto): Promise<EndUser> {
+  async clientRegister(
+    dto: ClientRegisterDto,
+  ): Promise<{
+    user: EndUser;
+    trial_granted: boolean;
+    trial_expire_time: Date | null;
+    trial_message: string;
+  }> {
+    // 校验应用存在且处于启用状态
+    const app = await this.appsRepository.findOne({
+      where: { id: dto.app_id },
+    });
+    if (!app) {
+      throw new BadRequestException("应用不存在");
+    }
+    if (!app.is_active) {
+      throw new ForbiddenException("应用已下线，暂停注册");
+    }
+
     // 检查用户名是否已存在（同一应用下）
     const existing = await this.endUsersRepository.findOne({
       where: { username: dto.username, app_id: dto.app_id },
@@ -197,7 +228,7 @@ export class EndUsersService {
     // 加密密码
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    // 创建用户
+    // 创建用户（默认不发放试用）
     const endUser = this.endUsersRepository.create({
       username: dto.username,
       password: hashedPassword,
@@ -207,7 +238,48 @@ export class EndUsersService {
       max_devices: 1,
     });
 
-    return await this.endUsersRepository.save(endUser);
+    // ============ 试用发放规则 ============
+    // 前置条件：应用开启试用 && 时长 > 0
+    // 必要条件：必须提供 hwid（否则任何人都能无限刷号）
+    // 排他条件：同一 App 下，同一 HWID 之前未发放过试用
+    let trialGranted = false;
+    let trialMessage = "应用未开启试用";
+
+    if (!app.trial_enabled || app.trial_duration <= 0) {
+      // 保持默认消息
+    } else if (!dto.hwid) {
+      trialMessage = "试用需要提供硬件 ID";
+    } else {
+      const existingTrial = await this.endUsersRepository.findOne({
+        where: {
+          app_id: dto.app_id,
+          hwid: dto.hwid,
+          has_used_trial: true,
+        },
+      });
+
+      if (existingTrial) {
+        trialMessage = "此设备已在本应用使用过试用";
+      } else {
+        const now = nowCN();
+        endUser.expire_time = new Date(
+          now.getTime() + app.trial_duration * 1000,
+        );
+        endUser.max_devices = app.trial_device_limit || 1;
+        endUser.has_used_trial = true;
+        trialGranted = true;
+        trialMessage = `已发放 ${app.trial_duration} 秒试用`;
+      }
+    }
+
+    const savedUser = await this.endUsersRepository.save(endUser);
+
+    return {
+      user: savedUser,
+      trial_granted: trialGranted,
+      trial_expire_time: savedUser.expire_time || null,
+      trial_message: trialMessage,
+    };
   }
 
   async clientLogin(dto: ClientLoginDto): Promise<{
@@ -246,6 +318,9 @@ export class EndUsersService {
     let heartInterval = 60;
     let heartbeatTimeout = 180;
     const app = await this.appsRepository.findOne({ where: { id: dto.app_id } });
+    if (app && !app.is_active) {
+      throw new ForbiddenException("应用已下线");
+    }
     if (app && app.heart_interval > 0) {
       heartInterval = app.heart_interval;
       const multiplier = app.heartbeat_timeout_multiplier || 3;
@@ -304,6 +379,11 @@ export class EndUsersService {
       hwid: dto.hwid || user.hwid,
     });
 
+    // 存储会话公钥（如果客户端提供了）
+    if (dto.session_public_key) {
+      this.sessionKeyStore.setSessionKey(user.id, dto.session_public_key);
+    }
+
     // 生成 JWT
     const payload = {
       sub: user.id,
@@ -351,6 +431,19 @@ export class EndUsersService {
       expire_time: user.expire_time,
       valid_message,
     };
+  }
+
+  /**
+   * 刷新终端用户的 JWT token
+   */
+  refreshToken(userId: number, username: string, appId: number): string {
+    const payload = {
+      sub: userId,
+      username,
+      app_id: appId,
+      type: "end_user",
+    };
+    return this.jwtService.sign(payload);
   }
 
   async findByUsername(username: string, appId: number): Promise<EndUser | null> {
