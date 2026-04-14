@@ -52,6 +52,7 @@ ENV/
 .env.*
 !.env.example
 !.env.production.example
+!.env.production.template
 
 # IDEs
 .idea/
@@ -76,3 +77,9 @@ yarn-error.log*
 # NetVerify Specific
 backend/dist/
 arco-design-pro-vite/dist/
+
+# 归档包（每次脚本打，不进 git）
+*.zip
+
+# Claude Code 会话数据
+.claude/
