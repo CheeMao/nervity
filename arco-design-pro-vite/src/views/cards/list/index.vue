@@ -145,7 +145,8 @@
           </a-tag>
         </template>
         <template #value="{ record }">
-          {{ formatValue(record.value) }}
+          <a-tag v-if="record.is_permanent" color="gold">永久</a-tag>
+          <template v-else>{{ formatValue(record.value) }}</template>
         </template>
         <template #status="{ record }">
           <a-tag :color="getStatusColor(record.status)">

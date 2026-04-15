@@ -4,6 +4,7 @@ export interface CardTypeRecord {
   id: number;
   name: string;
   value: number; // in seconds
+  is_permanent: boolean;
   price: number;
   app_id: number;
   created_at: string;
@@ -24,6 +25,7 @@ export interface CardTypeListQuery {
 export interface CreateCardTypeData {
   name: string;
   value: number;
+  is_permanent?: boolean;
   price: number;
   app_id: number;
   device_limit: number;
@@ -32,6 +34,7 @@ export interface CreateCardTypeData {
 export interface UpdateCardTypeData {
   name?: string;
   value?: number;
+  is_permanent?: boolean;
   price?: number;
   device_limit?: number;
 }

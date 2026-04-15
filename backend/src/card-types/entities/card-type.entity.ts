@@ -18,8 +18,11 @@ export class CardType {
   @Column()
   name: string; // e.g., "Monthly Card", "Daily Card"
 
-  @Column({ type: "int" })
-  value: number; // Duration in seconds
+  @Column({ type: "int", default: 0 })
+  value: number; // Duration in seconds; ignored when is_permanent = true
+
+  @Column({ type: "boolean", default: false })
+  is_permanent: boolean; // 永久卡
 
   @Column({ type: "decimal", precision: 10, scale: 2, default: 0 })
   price: number; // Base price

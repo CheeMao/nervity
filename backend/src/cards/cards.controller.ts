@@ -217,8 +217,8 @@ export class CardsController {
 
     const exportData = list.map((card) => ({
       "卡密": card.code,
-      "类型": card.type,
-      "时长(秒)": card.value,
+      "类型": card.is_permanent ? "永久" : card.type,
+      "时长(秒)": card.is_permanent ? "永久" : card.value,
       "状态": card.status,
       "应用ID": card.app_id,
       "应用名称": (card as any).app?.name || "",

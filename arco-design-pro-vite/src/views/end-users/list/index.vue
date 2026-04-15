@@ -181,7 +181,10 @@
             align="center"
           >
             <template #cell="{ record }">
-              {{ formatDate(record.expire_time) }}
+              <a-tag v-if="isPermanentExpire(record.expire_time)" color="gold"
+                >永久</a-tag
+              >
+              <template v-else>{{ formatDate(record.expire_time) }}</template>
             </template>
           </a-table-column>
           <a-table-column
@@ -351,6 +354,12 @@
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleString('zh-CN');
+  };
+
+  const isPermanentExpire = (dateStr?: string) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return !Number.isNaN(d.getTime()) && d.getFullYear() >= 9999;
   };
 
   const fetchData = async () => {

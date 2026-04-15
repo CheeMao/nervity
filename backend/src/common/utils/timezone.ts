@@ -31,3 +31,19 @@ export function formatDateCN(date: Date): string {
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
+
+/**
+ * 永久到期时间哨兵（MySQL DATETIME 上限）
+ */
+export function permanentExpireDate(): Date {
+    return new Date('9999-12-31T23:59:59');
+}
+
+/**
+ * 判断给定日期是否为永久到期
+ */
+export function isPermanentExpire(date: Date | string | null | undefined): boolean {
+    if (!date) return false;
+    const d = date instanceof Date ? date : new Date(date);
+    return !isNaN(d.getTime()) && d.getFullYear() >= 9999;
+}

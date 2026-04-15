@@ -19,6 +19,7 @@ export class CardTypesService {
     const userId = user?.userId || user?.id;
     const cardType = this.cardTypesRepository.create({
       ...createCardTypeDto,
+      value: createCardTypeDto.is_permanent ? 0 : createCardTypeDto.value,
       creator_id: userId,
     });
     return await this.cardTypesRepository.save(cardType);
@@ -66,7 +67,11 @@ export class CardTypesService {
     id: number,
     updateCardTypeDto: UpdateCardTypeDto,
   ): Promise<CardType> {
-    await this.cardTypesRepository.update(id, updateCardTypeDto);
+    const patch: Partial<CardType> = { ...updateCardTypeDto };
+    if (patch.is_permanent === true) {
+      patch.value = 0;
+    }
+    await this.cardTypesRepository.update(id, patch);
     return await this.findOne(id);
   }
 

@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { nowCN } from "../common/utils/timezone";
+import { nowCN, permanentExpireDate, isPermanentExpire } from "../common/utils/timezone";
 import { Repository } from "typeorm";
 import { Card, CardStatus } from "./entities/card.entity";
 import { Admin } from "../users/entities/user.entity";
@@ -54,6 +54,7 @@ export class CardsService {
     let price = 0;
     let cardTypeName = "custom";
     let deviceLimit = createCardDto.device_limit || 1;
+    let isPermanent = false;
 
     // 构建允许访问的 creator_id 列表
     const allowedCreatorIds: number[] = [creatorId];
@@ -105,6 +106,7 @@ export class CardsService {
       duration = cardType.value;
       cardTypeName = cardType.name;
       deviceLimit = cardType.device_limit;
+      isPermanent = !!cardType.is_permanent;
 
       // Fetch Creator (Agent) to get discount
       const creator = await this.usersService.findById(creatorId);
@@ -139,13 +141,14 @@ export class CardsService {
     }
 
     for (let i = 0; i < count; i += 1) {
-      if (duration <= 0) {
+      if (!isPermanent && duration <= 0) {
         throw new BadRequestException("卡密面值必须大于0");
       }
       const card = this.cardsRepository.create({
         ...createCardDto,
-        type: "time",
-        value: duration, // Ensure value is set from card type if applicable
+        type: isPermanent ? "permanent" : "time",
+        value: isPermanent ? 0 : duration,
+        is_permanent: isPermanent,
         code: this.generateCardCode(Math.min(12, Math.max(8, codeLength))),
         status: CardStatus.UNUSED,
         remark: createCardDto.remark,
@@ -213,7 +216,7 @@ export class CardsService {
       throw new Error("卡密已被使用或禁用");
     }
 
-    if (card.value <= 0) {
+    if (!card.is_permanent && card.value <= 0) {
       throw new Error("卡密面值无效(0)，无法充值");
     }
 
@@ -258,21 +261,25 @@ export class CardsService {
     const now = nowCN();
     let expireTime: Date;
 
-    // 检查现有到期时间是否有效
-    if (endUser.expire_time) {
-      const parsedExpireTime = new Date(endUser.expire_time);
-      // 使用 isNaN 检查日期是否有效，而不是简单的真值检查
-      if (!isNaN(parsedExpireTime.getTime()) && parsedExpireTime > now) {
-        expireTime = parsedExpireTime;
-      } else {
-        expireTime = now; // 无效或已过期，从现在开始计算
-      }
+    if (card.is_permanent || isPermanentExpire(endUser.expire_time)) {
+      // 永久卡 或 用户已是永久：到期时间固定为哨兵值，不再累加时长
+      expireTime = permanentExpireDate();
     } else {
-      expireTime = now; // 没有到期时间，从现在开始计算
-    }
+      // 检查现有到期时间是否有效
+      if (endUser.expire_time) {
+        const parsedExpireTime = new Date(endUser.expire_time);
+        if (!isNaN(parsedExpireTime.getTime()) && parsedExpireTime > now) {
+          expireTime = parsedExpireTime;
+        } else {
+          expireTime = now; // 无效或已过期，从现在开始计算
+        }
+      } else {
+        expireTime = now; // 没有到期时间，从现在开始计算
+      }
 
-    // 增加时长（秒）
-    expireTime = new Date(expireTime.getTime() + card.value * 1000);
+      // 增加时长（秒）
+      expireTime = new Date(expireTime.getTime() + card.value * 1000);
+    }
 
     // 7. 更新用户信息（card_creator_id 记录卡密创建者）
     await this.endUsersService.update(endUser.id, {
@@ -292,7 +299,8 @@ export class CardsService {
       success: true,
       message: "激活成功",
       expire_time: expireTime,
-      added_seconds: card.value,
+      added_seconds: card.is_permanent ? 0 : card.value,
+      is_permanent: !!card.is_permanent,
       max_devices: newMaxDevices,
     };
   }

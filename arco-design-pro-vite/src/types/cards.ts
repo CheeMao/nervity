@@ -14,6 +14,7 @@ export interface CardRecord {
   code: string;
   // type: string; // Deprecated or hidden
   value: number; // Duration in seconds
+  is_permanent: boolean;
   status: CardStatus;
   app_id: number;
   creator_id?: number;

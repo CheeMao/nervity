@@ -29,8 +29,11 @@ export class Card {
   @Column({ default: "time" })
   type: string;
 
-  @Column({ type: "int" })
-  value: number; // Duration in seconds
+  @Column({ type: "int", default: 0 })
+  value: number; // Duration in seconds; ignored when is_permanent = true
+
+  @Column({ type: "boolean", default: false })
+  is_permanent: boolean; // 永久卡
 
   @Column({ type: "enum", enum: CardStatus, default: CardStatus.UNUSED })
   status: CardStatus;

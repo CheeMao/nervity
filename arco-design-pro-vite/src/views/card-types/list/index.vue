@@ -93,7 +93,8 @@
           </span>
         </template>
         <template #value="{ record }">
-          {{ formatDuration(record.value) }}
+          <a-tag v-if="record.is_permanent" color="gold">永久</a-tag>
+          <template v-else>{{ formatDuration(record.value) }}</template>
         </template>
         <template #price="{ record }">
           {{ record.price }}
@@ -148,7 +149,12 @@
             <a-input-number
               v-model="formData.value"
               :min="1"
-              :placeholder="$t('cardTypes.form.value.placeholder')"
+              :disabled="formData.is_permanent"
+              :placeholder="
+                formData.is_permanent
+                  ? '永久卡无需设置时长'
+                  : $t('cardTypes.form.value.placeholder')
+              "
             />
             <div style="margin-top: 10px">
               <a-space wrap>
@@ -166,6 +172,9 @@
                 >
                 <a-tag checkable color="arcoblue" @click="setDuration(365)"
                   >365天</a-tag
+                >
+                <a-tag checkable color="arcoblue" @click="setPermanent"
+                  >永久</a-tag
                 >
               </a-space>
             </div>
@@ -286,7 +295,8 @@
   const formData = reactive({
     name: '',
     app_id: undefined as number | undefined,
-    value: 24, // Default 1 day
+    value: 24, // Default 1 day (in hours)
+    is_permanent: false,
     price: 0,
     device_limit: 1,
   });
@@ -294,7 +304,17 @@
   const formRules = {
     name: [{ required: true, message: t('cardTypes.form.name.required') }],
     app_id: [{ required: true, message: t('cardTypes.form.app.required') }],
-    value: [{ required: true, message: t('cardTypes.form.value.required') }],
+    value: [
+      {
+        required: true,
+        validator: (value: number, cb: (err?: string) => void) => {
+          if (formData.is_permanent) return cb();
+          if (!value || value < 1)
+            return cb(t('cardTypes.form.value.required'));
+          return cb();
+        },
+      },
+    ],
     price: [{ required: true, message: t('cardTypes.form.price.required') }],
     device_limit: [
       { required: true, message: t('cardTypes.form.deviceLimit.required') },
@@ -358,13 +378,19 @@
     formData.name = '';
     formData.app_id = undefined;
     formData.value = 24;
+    formData.is_permanent = false;
     formData.price = 0;
     formData.device_limit = 1;
     modalVisible.value = true;
   };
 
   const setDuration = (days: number) => {
+    formData.is_permanent = false;
     formData.value = days * 24;
+  };
+
+  const setPermanent = () => {
+    formData.is_permanent = !formData.is_permanent;
   };
 
   const handleEdit = (record: CardTypeRecord) => {
@@ -373,7 +399,10 @@
     modalTitle.value = t('cardTypes.modal.editTitle');
     formData.name = record.name;
     formData.app_id = record.app_id;
-    formData.value = Math.floor(record.value / 3600);
+    formData.is_permanent = !!record.is_permanent;
+    formData.value = record.is_permanent
+      ? 24
+      : Math.max(1, Math.floor(record.value / 3600));
     formData.price = record.price;
     formData.device_limit = record.device_limit || 1;
     modalVisible.value = true;
@@ -394,7 +423,10 @@
     if (res) return;
 
     try {
-      const submitData = { ...formData, value: formData.value * 3600 };
+      const submitData = {
+        ...formData,
+        value: formData.is_permanent ? 0 : formData.value * 3600,
+      };
       if (isEdit.value && currentId.value) {
         await updateCardType(currentId.value, submitData);
         Message.success(t('cardTypes.message.updateSuccess'));
