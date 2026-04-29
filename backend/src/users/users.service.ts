@@ -152,11 +152,48 @@ export class UsersService {
   async update(
     id: number,
     updateUserDto: any,
-    operatorId?: number,
+    currentUser?: { userId: number; role_name?: string } | number,
   ): Promise<Admin> {
     const user = await this.usersRepository.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException(`用户 ID ${id} 不存在`);
+    }
+
+    // 兼容老调用方式：直接传 operatorId
+    const operatorId =
+      typeof currentUser === 'number' ? currentUser : currentUser?.userId;
+    const operatorRoleName =
+      typeof currentUser === 'object' ? currentUser?.role_name : undefined;
+
+    // 越权检查：调用方不能把目标用户分配为高于自己可分配集合的角色
+    const wantsRoleChange =
+      updateUserDto.role !== undefined || updateUserDto.role_id !== undefined;
+    if (wantsRoleChange) {
+      if (!operatorRoleName) {
+        // 没有 role_name 上下文一律拒绝改角色（保守处理，避免越权）
+        throw new ForbiddenException('缺少调用者角色信息，无法变更角色');
+      }
+      const allowedRoles = this.getAssignableRoles(operatorRoleName);
+      if (
+        updateUserDto.role &&
+        !allowedRoles.includes(updateUserDto.role as AdminRole)
+      ) {
+        throw new ForbiddenException('您没有权限将用户分配为该角色');
+      }
+      if (updateUserDto.role_id) {
+        const targetRole = await this.accessControlService.findRoleById(
+          updateUserDto.role_id,
+        );
+        const enumByName: Record<string, AdminRole> = {
+          'Super Admin': AdminRole.ADMIN,
+          Developer: AdminRole.DEVELOPER,
+          Agent: AdminRole.AGENT,
+        };
+        const mapped = targetRole?.name ? enumByName[targetRole.name] : undefined;
+        if (!mapped || !allowedRoles.includes(mapped)) {
+          throw new ForbiddenException('您没有权限将用户分配为该角色');
+        }
+      }
     }
 
     if (updateUserDto.role_id) {
@@ -323,15 +360,8 @@ export class UsersService {
     }
 
     // 根据当前用户角色确定可以创建的用户类型
-    let allowedRoles: AdminRole[] = [];
-
-    if (currentRoleName === 'Super Admin') {
-      // 管理员可以创建开发者和代理商
-      allowedRoles = [AdminRole.DEVELOPER, AdminRole.AGENT];
-    } else if (currentRoleName === 'Developer') {
-      // 开发者只能创建代理商
-      allowedRoles = [AdminRole.AGENT];
-    } else {
+    const allowedRoles = this.getAssignableRoles(currentRoleName);
+    if (allowedRoles.length === 0) {
       throw new ForbiddenException("您没有创建用户的权限");
     }
 
@@ -354,6 +384,22 @@ export class UsersService {
       ...createDto,
       role: targetRole,
     });
+  }
+
+  /**
+   * 根据调用者角色名返回可分配（创建/编辑）的目标角色集合。
+   * - Super Admin：可分配开发者、代理商
+   * - Developer：只能分配代理商
+   * - 其他（含 Agent）：不可分配任何角色
+   */
+  private getAssignableRoles(currentRoleName?: string): AdminRole[] {
+    if (currentRoleName === 'Super Admin') {
+      return [AdminRole.DEVELOPER, AdminRole.AGENT];
+    }
+    if (currentRoleName === 'Developer') {
+      return [AdminRole.AGENT];
+    }
+    return [];
   }
 
   async count(): Promise<number> {

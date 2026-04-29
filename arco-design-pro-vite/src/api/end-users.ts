@@ -46,11 +46,13 @@ export interface EndUserListRes {
 
 export interface CreateEndUserData {
   username?: string;
-  hwid: string;
+  password?: string;
+  hwid?: string;
   app_id: number;
   agent_id?: number;
   expire_time?: string;
   is_active?: boolean;
+  max_devices?: number;
 }
 
 export interface UpdateEndUserData {

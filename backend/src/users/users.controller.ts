@@ -148,7 +148,7 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
     @Request() req,
   ) {
-    return this.usersService.update(id, updateUserDto, req.user.userId);
+    return this.usersService.update(id, updateUserDto, req.user);
   }
 
   @Delete(":id")

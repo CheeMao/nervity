@@ -345,18 +345,22 @@ export class ClientAuthController {
       server_time: Date.now(),
     };
 
-    // 如果用户被禁用或过期，返回强制登出指令
-    if (!isActive) {
+    // 强制登出只针对真正被禁用的账号。过期账号需要保留会话以便调用 /cards/redeem 续期，
+    // 此时 is_active 返回 false 告知客户端进入"充值续期"状态即可，不应强制登出。
+    if (!user.is_active) {
       response.commands = ["force_logout"];
-      response.message = isExpired ? "授权已过期，请充值后继续使用" : "账号已被禁用";
+      response.message = "账号已被禁用";
     } else {
       response.commands = [];
-      // 心跳成功且用户有效时，刷新 token（JWT 有效期 2h，靠心跳续期）
+      // 心跳成功（包括过期但未禁用的账号）都刷新 token，保证 JWT 不会在续期流程中途失效
       response.new_token = this.endUsersService.refreshToken(
         user.id,
         user.username,
         user.app_id,
       );
+      if (isExpired) {
+        response.message = "授权已过期，请充值后继续使用";
+      }
     }
 
     return response;

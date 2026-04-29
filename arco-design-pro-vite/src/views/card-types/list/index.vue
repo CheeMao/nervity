@@ -64,7 +64,11 @@
       <a-row style="margin-bottom: 16px">
         <a-col :span="12">
           <a-space>
-            <a-button type="primary" @click="handleCreate">
+            <a-button
+              v-if="userStore.permissions?.includes('card-type:create')"
+              type="primary"
+              @click="handleCreate"
+            >
               <template #icon><icon-plus /></template>
               {{ $t('cardTypes.operation.create') }}
             </a-button>
@@ -220,7 +224,10 @@
   import type { CardTypeRecord, CreateCardTypeData } from '@/api/card-types';
   import { getApps } from '@/api/apps';
   import type { AppRecord } from '@/types/apps';
+  import { useUserStore } from '@/store';
   import Breadcrumb from '@/components/breadcrumb/index.vue';
+
+  const userStore = useUserStore();
 
   const { t } = useI18n();
 

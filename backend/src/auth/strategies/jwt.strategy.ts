@@ -43,9 +43,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         throw new UnauthorizedException("账户已被禁用");
       }
 
-      if (user.expire_time && new Date(user.expire_time) < new Date()) {
-        throw new UnauthorizedException("授权已过期");
-      }
+      // 过期账号不在此处拦截：/cards/redeem 续期、/client/heartbeat 状态同步、
+      // /client/expire-time 查询都需要让过期用户通过 JWT 校验。
+      // 由各业务 handler 按 expire_time 自行决定响应，而不是在此统一 401。
     }
 
     // 支持两种用户类型：管理后台用户 (role) 和终端用户 (type: end_user)

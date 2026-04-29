@@ -31,8 +31,46 @@ export class EndUsersService {
     private sessionKeyStore: SessionKeyStore,
   ) { }
 
-  async create(createEndUserDto: CreateEndUserDto): Promise<EndUser> {
-    const endUser = this.endUsersRepository.create(createEndUserDto);
+  async create(
+    createEndUserDto: CreateEndUserDto,
+    currentUser?: { userId?: number; id?: number },
+  ): Promise<EndUser> {
+    if (!createEndUserDto.app_id) {
+      throw new BadRequestException("必须选择所属应用");
+    }
+    const app = await this.appsRepository.findOne({
+      where: { id: createEndUserDto.app_id },
+    });
+    if (!app) {
+      throw new BadRequestException("应用不存在");
+    }
+
+    // 同应用下用户名唯一校验（仅在传了 username 时）
+    if (createEndUserDto.username) {
+      const existing = await this.endUsersRepository.findOne({
+        where: {
+          username: createEndUserDto.username,
+          app_id: createEndUserDto.app_id,
+        },
+      });
+      if (existing) {
+        throw new BadRequestException("该应用下已存在同名用户");
+      }
+    }
+
+    const data: Partial<EndUser> = { ...createEndUserDto } as Partial<EndUser>;
+
+    // 密码哈希（与 update / clientRegister 保持一致）
+    if (createEndUserDto.password) {
+      data.password = await bcrypt.hash(createEndUserDto.password, 10);
+    }
+
+    // card_creator_id 默认填当前调用者，保证代理商数据权限过滤可用
+    if (data.card_creator_id == null) {
+      data.card_creator_id = currentUser?.userId ?? currentUser?.id ?? null;
+    }
+
+    const endUser = this.endUsersRepository.create(data);
     return await this.endUsersRepository.save(endUser);
   }
 

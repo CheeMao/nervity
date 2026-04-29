@@ -76,6 +76,14 @@
         </a-col>
         <a-col :span="12" style="display: flex; justify-content: end">
           <a-space>
+            <a-button
+              v-if="userStore.permissions?.includes('end-user:create')"
+              type="primary"
+              @click="handleCreate"
+            >
+              <template #icon><icon-plus /></template>
+              {{ $t('end.users.operation.create') }}
+            </a-button>
             <a-button @click="fetchData">
               <template #icon><icon-refresh /></template>
               {{ $t('end.users.operation.refresh') }}
@@ -299,6 +307,90 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- Create Modal -->
+    <a-modal
+      v-model:visible="createModalVisible"
+      :title="$t('end.users.modal.createTitle')"
+      :ok-loading="createModalLoading"
+      unmount-on-close
+      @ok="handleCreateSubmit"
+      @cancel="handleCreateModalCancel"
+    >
+      <a-form
+        ref="createFormRef"
+        :model="createFormData"
+        :rules="createFormRules"
+        layout="vertical"
+      >
+        <a-form-item
+          field="app_id"
+          :label="$t('end.users.form.appId')"
+          required
+        >
+          <a-select
+            v-model="createFormData.app_id"
+            :placeholder="$t('end.users.form.app.placeholder')"
+            :loading="appOptionsLoading"
+            allow-search
+            :filter-option="filterAppOption"
+          >
+            <a-option
+              v-for="app in appOptions"
+              :key="app.id"
+              :value="app.id"
+              :label="`${app.name} (ID: ${app.id})`"
+            >
+              {{ app.name }} (ID: {{ app.id }})
+            </a-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item
+          field="username"
+          :label="$t('end.users.form.username')"
+          required
+        >
+          <a-input
+            v-model="createFormData.username"
+            :placeholder="$t('end.users.form.username.placeholder')"
+          />
+        </a-form-item>
+        <a-form-item
+          field="password"
+          :label="$t('end.users.form.password')"
+          required
+        >
+          <a-input-password
+            v-model="createFormData.password"
+            :placeholder="$t('end.users.form.password.placeholder')"
+          />
+        </a-form-item>
+        <a-form-item
+          field="expire_time"
+          :label="$t('end.users.form.expireTime')"
+        >
+          <a-date-picker
+            v-model="createFormData.expire_time"
+            show-time
+            style="width: 100%"
+          />
+        </a-form-item>
+        <a-form-item
+          field="max_devices"
+          :label="$t('end.users.form.maxDevices')"
+        >
+          <a-input-number
+            v-model="createFormData.max_devices"
+            :min="1"
+            :step="1"
+            style="width: 100%"
+          />
+        </a-form-item>
+        <a-form-item field="is_active" :label="$t('end.users.form.isActive')">
+          <a-switch v-model="createFormData.is_active" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -309,16 +401,21 @@
   import axios from 'axios';
   import {
     queryEndUsers,
+    createEndUser,
     updateEndUser,
     deleteEndUser,
     unbindEndUserHwid,
     EndUserRecord,
     EndUserParams,
     UpdateEndUserData,
+    CreateEndUserData,
   } from '@/api/end-users';
+  import { getApps } from '@/api/apps';
+  import { useUserStore } from '@/store';
   import Breadcrumb from '@/components/breadcrumb/index.vue';
 
   const { t } = useI18n();
+  const userStore = useUserStore();
 
   const loading = ref(false);
   const exportLoading = ref(false);
@@ -350,6 +447,52 @@
     expire_time: '',
     password: '',
   });
+
+  // Create Modal
+  const createModalVisible = ref(false);
+  const createModalLoading = ref(false);
+  const createFormRef = ref();
+  const buildCreateFormData = (): CreateEndUserData => ({
+    app_id: undefined as unknown as number,
+    username: '',
+    password: '',
+    expire_time: '',
+    max_devices: 1,
+    is_active: true,
+  });
+  const createFormData = reactive<CreateEndUserData>(buildCreateFormData());
+  const createFormRules = {
+    app_id: [{ required: true, message: t('end.users.form.app.required') }],
+    username: [
+      { required: true, message: t('end.users.form.username.required') },
+    ],
+    password: [
+      { required: true, message: t('end.users.form.password.required') },
+      { minLength: 6, message: t('end.users.form.password.minLength') },
+    ],
+  };
+
+  // App dropdown
+  const appOptions = ref<{ id: number; name: string }[]>([]);
+  const appOptionsLoading = ref(false);
+  const fetchAppOptions = async () => {
+    appOptionsLoading.value = true;
+    try {
+      const res = await getApps({ page: 1, pageSize: 1000 } as any);
+      appOptions.value = (res.data.list || []).map((a: any) => ({
+        id: a.id,
+        name: a.name,
+      }));
+    } catch (err) {
+      // silent
+    } finally {
+      appOptionsLoading.value = false;
+    }
+  };
+  const filterAppOption = (input: string, option: any) => {
+    const label = String(option?.label ?? '').toLowerCase();
+    return label.includes(input.toLowerCase());
+  };
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-';
@@ -416,6 +559,40 @@
 
   const handleModalCancel = () => {
     modalVisible.value = false;
+  };
+
+  const resetCreateForm = () => {
+    Object.assign(createFormData, buildCreateFormData());
+    createFormRef.value?.clearValidate?.();
+  };
+
+  const handleCreate = () => {
+    resetCreateForm();
+    if (appOptions.value.length === 0) fetchAppOptions();
+    createModalVisible.value = true;
+  };
+
+  const handleCreateModalCancel = () => {
+    createModalVisible.value = false;
+  };
+
+  const handleCreateSubmit = async () => {
+    const valid = await createFormRef.value?.validate?.();
+    if (valid) return false; // arco returns errors object when invalid
+    createModalLoading.value = true;
+    try {
+      const payload: CreateEndUserData = { ...createFormData };
+      if (!payload.expire_time) delete payload.expire_time;
+      await createEndUser(payload);
+      Message.success(t('end.users.message.createSuccess'));
+      createModalVisible.value = false;
+      fetchData();
+    } catch (err) {
+      // global axios interceptor handles error message
+    } finally {
+      createModalLoading.value = false;
+    }
+    return true;
   };
 
   const handleSubmit = async () => {

@@ -329,10 +329,7 @@
           <a-col :span="12">
             <a-form-item field="role" :label="$t('users.form.role')">
               <a-select v-model="formData.role" placeholder="Select Role">
-                <a-option :value="UserRole.ADMIN">{{
-                  $t('users.role.admin')
-                }}</a-option>
-                <a-option :value="UserRole.DEVELOPER">{{
+                <a-option v-if="canCreateDeveloper" :value="UserRole.DEVELOPER">{{
                   $t('users.role.developer')
                 }}</a-option>
                 <a-option :value="UserRole.AGENT">{{

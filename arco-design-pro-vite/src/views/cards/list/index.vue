@@ -638,6 +638,7 @@
   const handleGenerate = () => {
     resetForm();
     modalVisible.value = true;
+    userStore.info();
   };
 
   const handleModalCancel = () => {

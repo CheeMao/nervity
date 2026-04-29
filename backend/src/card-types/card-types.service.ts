@@ -42,6 +42,11 @@ export class CardTypesService {
         fieldName: "creator_id",
         agentMode: "viewParent",
       });
+
+      // 代理商仅能看到对其开放的应用（agent_visible=true）下的卡类型
+      if (currentUser.role === 'agent') {
+        queryBuilder.andWhere('app.agent_visible = :agentVisible', { agentVisible: true });
+      }
     }
 
     if (app_id) {

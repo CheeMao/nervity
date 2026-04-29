@@ -76,6 +76,7 @@ const useUserStore = defineStore('user', {
           role_name: res.data.role_name,
           permissions: res.data.permissions || [],
         });
+        await this.info();
       } catch (err) {
         clearToken();
         throw err;

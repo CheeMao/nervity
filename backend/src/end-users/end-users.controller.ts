@@ -15,6 +15,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiQuery, A
 import { Response } from "express";
 import { EndUsersService } from "./end-users.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RolesGuard } from "../auth/guards/roles.guard";
+import { RequirePermissions } from "../access-control/decorators/require-permissions.decorator";
 import { QueryEndUserDto } from "./dto/query-end-user.dto";
 import { CreateEndUserDto } from "./dto/create-end-user.dto";
 import { UpdateEndUserDto } from "./dto/update-end-user.dto";
@@ -23,24 +25,28 @@ import { ExcelExportUtil } from "../common/utils/excel-export.util";
 
 @ApiTags('终端用户 (End Users)')
 @Controller("end-users")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth('JWT-auth')
 export class EndUsersController {
   constructor(private readonly endUsersService: EndUsersService) {}
 
   @Post()
-  @ApiOperation({ summary: '创建终端用户', description: '创建新的终端用户' })
+  @RequirePermissions('end-user:create')
+  @ApiOperation({ summary: '创建终端用户', description: '创建新的终端用户。需要 end-user:create 权限' })
   @ApiBody({ type: CreateEndUserDto })
   @ApiResponse({ status: 201, description: '创建成功' })
   @ApiResponse({ status: 401, description: '未授权' })
-  create(@Body() createEndUserDto: CreateEndUserDto) {
-    return this.endUsersService.create(createEndUserDto);
+  @ApiResponse({ status: 403, description: '权限不足' })
+  create(@Body() createEndUserDto: CreateEndUserDto, @Request() req) {
+    return this.endUsersService.create(createEndUserDto, req.user);
   }
 
   @Get()
+  @RequirePermissions('end-user:read')
   @ApiOperation({ summary: '获取终端用户列表', description: '分页查询终端用户。admin看全部，developer看自己和下级，agent只看自己' })
   @ApiResponse({ status: 200, description: '成功' })
   @ApiResponse({ status: 401, description: '未授权' })
+  @ApiResponse({ status: 403, description: '权限不足' })
   findAll(@Query() query: QueryEndUserDto, @Request() req) {
     const currentUser = req.user ? {
       id: req.user.userId,
@@ -54,48 +60,60 @@ export class EndUsersController {
   }
 
   @Get(":id")
+  @RequirePermissions('end-user:read')
   @ApiOperation({ summary: '获取终端用户详情', description: '根据ID获取终端用户详情' })
   @ApiParam({ name: 'id', description: '终端用户ID', type: 'number' })
   @ApiResponse({ status: 200, description: '成功' })
+  @ApiResponse({ status: 403, description: '权限不足' })
   findOne(@Param("id") id: string) {
     return this.endUsersService.findOne(+id);
   }
 
   @Get("hwid/:hwid")
+  @RequirePermissions('end-user:read')
   @ApiOperation({ summary: '按HWID查询终端用户', description: '根据硬件ID查询终端用户' })
   @ApiParam({ name: 'hwid', description: '硬件ID' })
   @ApiResponse({ status: 200, description: '成功' })
+  @ApiResponse({ status: 403, description: '权限不足' })
   findByHwid(@Param("hwid") hwid: string) {
     return this.endUsersService.findByHwid(hwid);
   }
 
   @Put(":id")
-  @ApiOperation({ summary: '更新终端用户', description: '更新终端用户信息' })
+  @RequirePermissions('end-user:update')
+  @ApiOperation({ summary: '更新终端用户', description: '更新终端用户信息。需要 end-user:update 权限' })
   @ApiParam({ name: 'id', description: '终端用户ID', type: 'number' })
   @ApiBody({ type: UpdateEndUserDto })
   @ApiResponse({ status: 200, description: '更新成功' })
+  @ApiResponse({ status: 403, description: '权限不足' })
   update(@Param("id") id: string, @Body() updateEndUserDto: UpdateEndUserDto) {
     return this.endUsersService.update(+id, updateEndUserDto);
   }
 
   @Delete(":id")
-  @ApiOperation({ summary: '删除终端用户', description: '删除指定终端用户' })
+  @RequirePermissions('end-user:delete')
+  @ApiOperation({ summary: '删除终端用户', description: '删除指定终端用户。需要 end-user:delete 权限' })
   @ApiParam({ name: 'id', description: '终端用户ID', type: 'number' })
   @ApiResponse({ status: 200, description: '删除成功' })
+  @ApiResponse({ status: 403, description: '权限不足' })
   remove(@Param("id") id: string) {
     return this.endUsersService.remove(+id);
   }
 
   @Put(":id/unbind-hwid")
-  @ApiOperation({ summary: '解绑所有设备', description: '解绑该用户绑定的所有设备' })
+  @RequirePermissions('end-user:update')
+  @ApiOperation({ summary: '解绑所有设备', description: '解绑该用户绑定的所有设备。需要 end-user:update 权限' })
   @ApiParam({ name: 'id', description: '终端用户ID', type: 'number' })
   @ApiResponse({ status: 200, description: '解绑成功' })
+  @ApiResponse({ status: 403, description: '权限不足' })
   unbindHwid(@Param("id") id: string) {
     return this.endUsersService.unbindHwid(+id);
   }
 
   @Get("export")
+  @RequirePermissions('end-user:read')
   @ApiOperation({ summary: "导出终端用户", description: "导出终端用户数据为 Excel 文件" })
+  @ApiResponse({ status: 403, description: '权限不足' })
   async export(@Query() query: QueryEndUserDto, @Request() req, @Res() res: Response) {
     const currentUser = req.user ? {
       id: req.user.userId,
