@@ -249,7 +249,11 @@
         <div v-if="userStore.role === 'agent'" class="price-info">
           <div class="price-row">
             <span class="price-label">{{ $t('cards.form.unitPrice') }}</span>
-            <span class="price-value">¥{{ unitPrice.toFixed(2) }}</span>
+            <span class="price-value original">¥{{ unitPrice.toFixed(2) }}</span>
+          </div>
+          <div class="price-row">
+            <span class="price-label">{{ $t('cards.form.wholesalePrice') }}</span>
+            <span class="price-value">¥{{ finalUnitPrice.toFixed(2) }}</span>
           </div>
           <div class="price-row">
             <span class="price-label">{{ $t('cards.form.totalPrice') }}</span>
@@ -494,18 +498,16 @@
 
   const unitPrice = computed(() => {
     if (selectedCardType.value) {
-      return Number(selectedCardType.value.price);
+      return Number(selectedCardType.value.price) || 0;
     }
     return 0;
   });
 
   const discountRate = computed(() => {
-    // Assuming userStore has agent info flattened or accessible
-    // Based on previous work, user info is in userStore.userInfo
-    // But we added level/discount_rate to user response.
-    // Let's check userStore type or just assume dynamic access for now.
     const user = userStore.userInfo as any;
-    return user.discount_rate || 100;
+    const raw = user?.discount_rate ?? user?.agent?.discount_rate;
+    const rate = Number(raw);
+    return Number.isFinite(rate) && rate > 0 ? rate : 100;
   });
 
   const finalUnitPrice = computed(() => {
@@ -635,10 +637,14 @@
     if (formData.app_id) handleAppChange(formData.app_id);
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     resetForm();
+    try {
+      await userStore.info();
+    } catch {
+      // ignore — modal still opens with cached values
+    }
     modalVisible.value = true;
-    userStore.info();
   };
 
   const handleModalCancel = () => {
@@ -804,12 +810,19 @@
           font-size: 15px;
         }
 
+        &.original {
+          color: var(--color-text-3);
+          text-decoration: line-through;
+          font-weight: 400;
+        }
+
         .insufficient {
           color: rgb(var(--danger-6));
           font-size: 12px;
           margin-left: 4px;
         }
       }
+
     }
   }
 </style>

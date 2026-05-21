@@ -61,4 +61,11 @@ export default {
   'cards.generate.result.close': 'Close',
   'cards.message.copySuccess': 'Copied to clipboard',
   'cards.message.copyFail': 'Copy failed, please select and copy manually',
+  'cards.form.priceInfo': 'Price Info',
+  'cards.form.unitPrice': 'List Price',
+  'cards.form.wholesalePrice': 'Your Price',
+  'cards.form.discount': 'Discount',
+  'cards.form.totalPrice': 'Total (Your Price)',
+  'cards.form.currentBalance': 'Current Balance',
+  'cards.form.balance.insufficient': 'Insufficient balance',
 };
