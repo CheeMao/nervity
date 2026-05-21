@@ -110,8 +110,12 @@ export class CardsService {
 
       // Fetch Creator (Agent) to get discount
       const creator = await this.usersService.findById(creatorId);
-      if (creator.role_relation?.name === 'Agent') {
-        const discountRate = creator.agent?.discount_rate || 100;
+      const isAgent =
+        creator.role === 'agent' || creator.role_relation?.name === 'Agent';
+      if (isAgent) {
+        const rawRate = Number(creator.agent?.discount_rate);
+        const discountRate =
+          Number.isFinite(rawRate) && rawRate > 0 ? rawRate : 100;
         const basePrice = Number(cardType.price);
         const unitPrice = basePrice * (discountRate / 100);
         price = unitPrice * count;
@@ -119,7 +123,7 @@ export class CardsService {
         // Check Balance
         if (Number(creator.balance) < price) {
           throw new BadRequestException(
-            `余额不足。需要: ${price}, 可用: ${creator.balance}`,
+            `余额不足。需要: ${price.toFixed(2)}, 可用: ${creator.balance}`,
           );
         }
 

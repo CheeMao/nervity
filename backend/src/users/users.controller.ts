@@ -102,9 +102,9 @@ export class UsersController {
       email: user.email,
       balance: user.balance,
       is_active: user.is_active,
-      agent: user.agent ? { level: user.agent.agent_level, discount_rate: user.agent.discount_rate } : undefined,
+      agent: user.agent ? { level: user.agent.level, discount_rate: user.agent.discount_rate } : undefined,
       discount_rate: user.agent?.discount_rate,
-      level: user.agent?.agent_level,
+      level: user.agent?.level,
     };
   }
 
