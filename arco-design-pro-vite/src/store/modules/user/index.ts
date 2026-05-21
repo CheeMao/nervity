@@ -32,6 +32,9 @@ const useUserStore = defineStore('user', {
     role_name: undefined,
     permissions: [],
     balance: 0,
+    discount_rate: undefined,
+    level: undefined,
+    agent: undefined,
   }),
 
   getters: {
