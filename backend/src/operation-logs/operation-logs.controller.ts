@@ -7,7 +7,7 @@ import { RequirePermissions } from "../access-control/decorators/require-permiss
 
 @ApiTags('操作日志 (Operation Logs)')
 @Controller("operation-logs")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('JWT-auth')
 export class OperationLogsController {
   constructor(private readonly operationLogsService: OperationLogsService) {}

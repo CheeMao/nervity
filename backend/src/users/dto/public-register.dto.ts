@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsEnum } from "class-validator";
+import { IsString, IsEmail, IsOptional, IsEnum, Length, MinLength, MaxLength } from "class-validator";
 
 export enum RegisterType {
   DEVELOPER = "developer",
@@ -7,9 +7,12 @@ export enum RegisterType {
 
 export class PublicRegisterDto {
   @IsString()
+  @Length(3, 50)
   username: string;
 
   @IsString()
+  @MinLength(8)
+  @MaxLength(72)
   password: string;
 
   @IsEnum(RegisterType)

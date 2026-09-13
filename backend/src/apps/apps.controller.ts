@@ -1,3 +1,4 @@
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Get,
@@ -17,12 +18,12 @@ import { CreateAppDto } from "./dto/create-app.dto";
 import { UpdateAppDto } from "./dto/update-app.dto";
 
 @ApiTags('应用管理 (Apps)')
+@ManagedResource("app")
 @Controller("apps")
 export class AppsController {
   constructor(private readonly appsService: AppsService) { }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建应用', description: '创建新应用。非管理员只能创建自己的应用' })
   @ApiResponse({ status: 201, description: '创建成功' })
@@ -33,7 +34,6 @@ export class AppsController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取应用列表', description: '分页查询应用列表。admin看全部，developer看自己和下级，agent只看自己' })
   @ApiQuery({ name: 'page', description: '页码', required: false, type: 'number' })
@@ -70,7 +70,6 @@ export class AppsController {
   }
 
   @Put(":id")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '更新应用', description: '更新应用信息（app_secret 不可修改）' })
   @ApiParam({ name: 'id', description: '应用ID', type: 'number' })
@@ -82,7 +81,6 @@ export class AppsController {
   }
 
   @Delete(":id")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '删除应用', description: '删除指定应用' })
   @ApiParam({ name: 'id', description: '应用ID', type: 'number' })

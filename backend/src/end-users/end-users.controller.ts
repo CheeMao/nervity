@@ -1,3 +1,4 @@
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Get,
@@ -24,8 +25,9 @@ import { ClientRegisterDto, ClientLoginDto } from "./dto/client-auth.dto";
 import { ExcelExportUtil } from "../common/utils/excel-export.util";
 
 @ApiTags('终端用户 (End Users)')
+@ManagedResource("end-user")
 @Controller("end-users")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('JWT-auth')
 export class EndUsersController {
   constructor(private readonly endUsersService: EndUsersService) {}
@@ -57,6 +59,13 @@ export class EndUsersController {
     } : undefined;
 
     return this.endUsersService.findAll(query, currentUser);
+  }
+
+  // Static routes must be registered before /:id so "export" is not parsed as an ID.
+  @Get("export")
+  @RequirePermissions('end-user:read')
+  async exportBeforeId(@Query() query: QueryEndUserDto, @Request() req, @Res() res: Response) {
+    return this.export(query, req, res);
   }
 
   @Get(":id")
@@ -110,7 +119,6 @@ export class EndUsersController {
     return this.endUsersService.unbindHwid(+id);
   }
 
-  @Get("export")
   @RequirePermissions('end-user:read')
   @ApiOperation({ summary: "导出终端用户", description: "导出终端用户数据为 Excel 文件" })
   @ApiResponse({ status: 403, description: '权限不足' })
@@ -139,7 +147,7 @@ export class EndUsersController {
       "创建时间": ExcelExportUtil.formatDate(user.created_at),
     }));
 
-    const buffer = ExcelExportUtil.exportToBuffer(exportData, "end_users");
+    const buffer = await ExcelExportUtil.exportToBuffer(exportData, "end_users");
 
     res.setHeader(
       "Content-Type",

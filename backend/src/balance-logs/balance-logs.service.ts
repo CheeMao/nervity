@@ -72,11 +72,11 @@ export class BalanceLogsService {
     return { list: sanitizedList as any, total };
   }
 
-  async getStatistics(userId?: number) {
+  async getStatistics(userId?: number, currentUser?: CurrentUser) {
     const queryBuilder = this.balanceLogsRepository.createQueryBuilder("log");
 
     if (userId) {
-      queryBuilder.where("log.user_id = :userId", { userId });
+      queryBuilder.andWhere("log.user_id = :userId", { userId });
     }
 
     const [
@@ -88,11 +88,11 @@ export class BalanceLogsService {
       queryBuilder.clone().getCount(),
       queryBuilder.clone()
         .select("SUM(log.amount)", "total")
-        .where("log.amount > 0")
+        .andWhere("log.amount > 0")
         .getRawOne(),
       queryBuilder.clone()
         .select("SUM(ABS(log.amount))", "total")
-        .where("log.amount < 0")
+        .andWhere("log.amount < 0")
         .getRawOne(),
       queryBuilder.clone()
         .orderBy("log.created_at", "DESC")

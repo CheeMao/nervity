@@ -7,7 +7,7 @@ import { RequirePermissions } from "../access-control/decorators/require-permiss
 
 @ApiTags('余额日志 (Balance Logs)')
 @Controller("balance-logs")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('JWT-auth')
 export class BalanceLogsController {
   constructor(private readonly balanceLogsService: BalanceLogsService) {}
@@ -51,6 +51,9 @@ export class BalanceLogsController {
   @ApiResponse({ status: 200, description: '成功' })
   @ApiResponse({ status: 401, description: '未授权' })
   async getStatistics(@Request() req) {
-    return this.balanceLogsService.getStatistics(req.user.userId);
+    return this.balanceLogsService.getStatistics(req.user.userId, {
+      id: req.user.userId, userId: req.user.userId, role: req.user.role,
+      permissions: req.user.permissions, parent_id: req.user.parent_id,
+    });
   }
 }

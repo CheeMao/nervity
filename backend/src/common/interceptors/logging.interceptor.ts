@@ -94,6 +94,9 @@ export class LoggingInterceptor implements NestInterceptor {
       // Skip logging for login endpoint to avoid logging passwords in body (handled by masking but still)
       // or skip GET requests if we only want mutation logs
       if (method === "GET") return;
+      // Operation logs are for backend operators; client actions have their own
+      // audit trail and their IDs do not reference admins.id.
+      if (user?.type === "end_user") return;
 
       // Mask sensitive fields
       const maskedBody = { ...body };
@@ -103,13 +106,17 @@ export class LoggingInterceptor implements NestInterceptor {
         "access_token",
         "refresh_token",
         "secret",
+        "app_secret",
+        "private_key",
+        "session_public_key",
+        "x-signature",
       ];
       sensitiveFields.forEach((field) => {
         if (maskedBody[field]) maskedBody[field] = "******";
       });
 
       await this.operationLogsService.create({
-        admin_id: user?.sub || user?.id, // user is attached by JwtAuthGuard usually
+        admin_id: user?.userId || user?.id || user?.sub,
         admin_username: user?.username,
         method: method as OperationMethod,
         path,

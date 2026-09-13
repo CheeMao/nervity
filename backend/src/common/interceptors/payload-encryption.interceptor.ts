@@ -21,27 +21,7 @@ export class PayloadEncryptionInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const isEncrypted = request.headers["x-encryption"] === "true";
 
-    // Handle Request Decryption
-    if (isEncrypted && request.body && request.body.data && request.body.key) {
-      try {
-        // 1. Decrypt AES Key with RSA Private Key
-        const aesKey = this.encryptionService.decryptRSA(request.body.key);
-        // 2. Decrypt Data with AES Key
-        const decryptedData = this.encryptionService.decryptAES(
-          request.body.data,
-          aesKey,
-        );
-
-        // Replace body with decrypted data
-        request.body = decryptedData;
-
-        // Store AES key in request for Response Encryption
-        request["aesKey"] = aesKey;
-      } catch (e) {
-        throw new BadRequestException("Decryption failed");
-      }
-    }
-
+    // Decryption runs in ApiAuthGuard before Passport reads credentials.
     // Handle Response Encryption
     return next.handle().pipe(
       map((data) => {

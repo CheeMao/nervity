@@ -1,0 +1,59 @@
+{
+  "checks": [
+    {
+      "name": "余额统计SUM查询丢失用户过滤条件",
+      "confirmed": true,
+      "evidence": [
+        "SELECT SUM(`log`.`amount`) AS `total` FROM `balance_logs` `log` WHERE `log`.`amount` > 0",
+        "SELECT SUM(ABS(`log`.`amount`)) AS `total` FROM `balance_logs` `log` WHERE `log`.`amount` < 0"
+      ]
+    },
+    {
+      "name": "切换登录HWID可抹掉原机器试用记录后再领试用",
+      "confirmed": true,
+      "evidence": {
+        "firstTrial": true,
+        "firstUserNowHwid": "device-B",
+        "secondTrialSameOriginalHwid": true
+      }
+    },
+    {
+      "name": "旧代理制卡接口未验证应用归属并接受负数数量",
+      "confirmed": true,
+      "evidence": {
+        "before": 10,
+        "after": 12,
+        "uncheckedAppId": 999,
+        "cards": 0
+      }
+    },
+    {
+      "name": "同HWID设备旧绑定方法抢占其他用户记录",
+      "confirmed": true,
+      "evidence": {
+        "beforeUser": 101,
+        "afterUser": 102
+      }
+    },
+    {
+      "name": "Python浮点JSON与服务端重序列化导致签名不同",
+      "confirmed": true,
+      "evidence": {
+        "sdk": "{\"data\":{\"amount\":1.0}}",
+        "server": "{\"data\":{\"amount\":1}}",
+        "signaturesMatch": false
+      }
+    },
+    {
+      "name": "签名可重放且同一应用内不绑定接口路径",
+      "confirmed": true,
+      "evidence": {
+        "firstAccepted": true,
+        "replayAccepted": true,
+        "otherPathAccepted": true
+      }
+    }
+  ],
+  "total": 6,
+  "confirmed": 6
+}

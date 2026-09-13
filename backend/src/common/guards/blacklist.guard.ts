@@ -10,7 +10,7 @@ import { BlacklistService } from "../../access-control/blacklist.service";
 export class BlacklistGuard implements CanActivate {
   constructor(private readonly blacklistService: BlacklistService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const ip =
       request.ip ||
@@ -28,7 +28,7 @@ export class BlacklistGuard implements CanActivate {
     }
 
     // Checking logic
-    const check = this.blacklistService.isBlocked(ip, hwid);
+    const check = await this.blacklistService.isBlocked(ip, hwid);
     if (check.blocked) {
       throw new ForbiddenException(`Access denied: ${check.reason}`);
     }

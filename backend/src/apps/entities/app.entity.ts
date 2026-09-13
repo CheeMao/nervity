@@ -16,7 +16,7 @@ export class App {
   @Column()
   name: string;
 
-  @Column({ unique: true })
+  @Column({ unique: true, select: false })
   app_secret: string;
 
   @Column({ default: "1.0.0" })

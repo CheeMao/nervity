@@ -6,10 +6,12 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from "typeorm";
 import { App } from "../../apps/entities/app.entity";
 
 @Entity("end_users")
+@Index("uq_end_user_app_username", ["app_id", "username"], { unique: true })
 export class EndUser {
   @PrimaryGeneratedColumn("increment")
   id: number;
@@ -50,6 +52,9 @@ export class EndUser {
 
   @Column({ default: false })
   has_used_trial: boolean; // 是否已使用过试用
+
+  @Column({ type: "int", default: 0 })
+  token_version: number;
 
   @CreateDateColumn()
   created_at: Date;

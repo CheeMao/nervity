@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsEnum, IsNotEmpty, MinLength, IsNumber, IsBoolean, ValidateIf } from "class-validator";
+import { IsString, IsEmail, IsOptional, IsEnum, IsNotEmpty, MinLength, MaxLength, IsNumber, IsBoolean, ValidateIf } from "class-validator";
 import { Transform } from "class-transformer";
 import { AdminRole } from "../entities/user.entity";
 
@@ -9,7 +9,8 @@ export class CreateAdminDto {
 
   @IsString()
   @IsNotEmpty({ message: '密码不能为空' })
-  @MinLength(6, { message: '密码长度至少6位' })
+  @MinLength(8, { message: '密码长度至少8位' })
+  @MaxLength(72, { message: '密码最多72位' })
   password: string;
 
   @IsEnum(AdminRole)

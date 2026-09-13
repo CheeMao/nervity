@@ -1,3 +1,6 @@
+import { OptionalJwtAuthGuard } from "../auth/guards/optional-jwt-auth.guard";
+import { Public } from "../auth/decorators/access-scope.decorator";
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Get,
@@ -18,6 +21,7 @@ import { CreateRemoteVariableDto } from "./dto/create-remote-variable.dto";
 import { UpdateRemoteVariableDto } from "./dto/update-remote-variable.dto";
 
 @ApiTags('远程变量 (Remote Variables)')
+@ManagedResource("variable")
 @Controller("remote-variables")
 export class RemoteVariablesController {
   constructor(
@@ -25,7 +29,6 @@ export class RemoteVariablesController {
   ) { }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取远程变量列表（管理端）', description: '分页查询远程变量列表。admin看全部，developer看自己和下级，agent只看自己' })
   @ApiQuery({ name: 'page', description: '页码', required: false, type: 'number' })
@@ -60,7 +63,6 @@ export class RemoteVariablesController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建远程变量', description: '创建新的远程变量。非管理员只能为自己的应用创建变量' })
   @ApiBody({ type: CreateRemoteVariableDto })
@@ -100,8 +102,9 @@ export class RemoteVariablesController {
     return { success: true, message: "远程变量已删除" };
   }
 
+  @Public()
   @Get("app/:appId")
-  @UseGuards(SignatureGuard)
+  @UseGuards(OptionalJwtAuthGuard, SignatureGuard)
   @ApiOperation({ summary: '获取应用变量列表（客户端）', description: '获取指定应用的所有远程变量，需要签名验证' })
   @ApiParam({ name: 'appId', description: '应用ID', type: 'number' })
   @ApiResponse({ status: 200, description: '成功', schema: { type: 'object', properties: { list: { type: 'array', items: { type: 'object' } } } } })
@@ -113,8 +116,9 @@ export class RemoteVariablesController {
     return { list: variables };
   }
 
+  @Public()
   @Get("app/:appId/object")
-  @UseGuards(SignatureGuard)
+  @UseGuards(OptionalJwtAuthGuard, SignatureGuard)
   @ApiOperation({ summary: '获取应用变量对象（客户端）', description: '获取指定应用的所有远程变量，返回key-value对象格式' })
   @ApiParam({ name: 'appId', description: '应用ID', type: 'number' })
   @ApiResponse({ status: 200, description: '成功' })
@@ -125,8 +129,9 @@ export class RemoteVariablesController {
     );
   }
 
+  @Public()
   @Get("app/:appId/key/:key")
-  @UseGuards(SignatureGuard)
+  @UseGuards(OptionalJwtAuthGuard, SignatureGuard)
   @ApiOperation({ summary: '获取单个变量值（客户端）', description: '获取指定应用的单个远程变量值' })
   @ApiParam({ name: 'appId', description: '应用ID', type: 'number' })
   @ApiParam({ name: 'key', description: '变量名' })

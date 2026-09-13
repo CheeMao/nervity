@@ -1,0 +1,184 @@
+{
+  "checks": [
+    {
+      "name": "匿名旧注册保留管理员角色/角色ID/余额",
+      "confirmed": true,
+      "evidence": {
+        "status": 201,
+        "role": "admin",
+        "role_id": 1,
+        "balance": 888
+      }
+    },
+    {
+      "name": "终端用户JWT可重置后台其他管理员密码和余额",
+      "confirmed": true,
+      "evidence": {
+        "status": 200,
+        "passwordReplaced": true,
+        "balance": 999
+      }
+    },
+    {
+      "name": "匿名管理写接口可达",
+      "confirmed": true,
+      "evidence": [
+        {
+          "method": "put",
+          "path": "/api/cloud/7",
+          "status": 200
+        },
+        {
+          "method": "put",
+          "path": "/api/remote-variables/7",
+          "status": 200
+        },
+        {
+          "method": "put",
+          "path": "/api/devices/7/ban",
+          "status": 200
+        },
+        {
+          "method": "delete",
+          "path": "/api/cards/7",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "name": "匿名应用详情暴露app_secret",
+      "confirmed": true,
+      "evidence": {
+        "status": 200,
+        "appSecretReturned": true
+      }
+    },
+    {
+      "name": "导出路由被:id抢先匹配",
+      "confirmed": true,
+      "evidence": {
+        "requests": [
+          {
+            "path": "/api/devices/export",
+            "status": 400
+          },
+          {
+            "path": "/api/end-users/export",
+            "status": 400
+          }
+        ],
+        "detailReceivedNaN": true
+      }
+    },
+    {
+      "name": "未激活用户心跳被标记有效",
+      "confirmed": true,
+      "evidence": {
+        "is_active": true,
+        "expire_time": null,
+        "success": true
+      }
+    },
+    {
+      "name": "登录限流被register策略压到5次",
+      "confirmed": true,
+      "evidence": [
+        201,
+        201,
+        201,
+        201,
+        201,
+        429
+      ]
+    },
+    {
+      "name": "已启用2FA时任意非空验证码仍签发JWT",
+      "confirmed": true,
+      "evidence": {
+        "tokenIssued": true
+      }
+    },
+    {
+      "name": "otplib实际安装版本不支持authenticator",
+      "confirmed": true,
+      "evidence": {
+        "authenticator": "undefined",
+        "generateThrows": "TypeError"
+      }
+    },
+    {
+      "name": "后台JWT校验不查询后台账户状态",
+      "confirmed": true,
+      "evidence": {
+        "databaseLookups": 0,
+        "acceptedRole": "admin"
+      }
+    },
+    {
+      "name": "代理不传card_type_id可免费制卡",
+      "confirmed": true,
+      "evidence": {
+        "cards": 1,
+        "balance": 100,
+        "deductions": 0
+      }
+    },
+    {
+      "name": "负数生成数量导致余额增加",
+      "confirmed": true,
+      "evidence": {
+        "before": 100,
+        "after": 120,
+        "cards": 0
+      }
+    },
+    {
+      "name": "卡密保存失败扣款没有回滚",
+      "confirmed": true,
+      "evidence": {
+        "before": 100,
+        "after": 80,
+        "saveFailed": true
+      }
+    },
+    {
+      "name": "并发制卡两笔订单只扣一笔余额",
+      "confirmed": true,
+      "evidence": {
+        "cards": 12,
+        "unitPrice": 10,
+        "before": 100,
+        "after": 40
+      }
+    },
+    {
+      "name": "同一卡密并发兑换两位用户都获得授权",
+      "confirmed": true,
+      "evidence": {
+        "successfulRedemptions": 2,
+        "users": [
+          101,
+          102
+        ]
+      }
+    },
+    {
+      "name": "同账号第二设备登录覆盖第一设备加密密钥",
+      "confirmed": true,
+      "evidence": {
+        "deviceADecrypts": false,
+        "deviceBDecrypts": true
+      }
+    },
+    {
+      "name": "PostgreSQL元数据不接受现有datetime字段",
+      "confirmed": true,
+      "evidence": {
+        "connectionAttempted": false,
+        "metadataValidation": "datetime unsupported"
+      }
+    }
+  ],
+  "total": 17,
+  "confirmed": 17
+}

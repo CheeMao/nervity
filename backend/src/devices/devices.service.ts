@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { nowCN } from "../common/utils/timezone";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Like, LessThan } from "typeorm";
+import { Repository, Like, LessThan, IsNull } from "typeorm";
 import { Device, DeviceStatus } from "./entities/device.entity";
 import { App } from "../apps/entities/app.entity";
 import { DataPermissionService, CurrentUser } from "../common/services/data-permission.service";
@@ -112,7 +112,7 @@ export class DevicesService {
    * 注册或更新设备
    */
   async registerDevice(deviceData: Partial<Device>): Promise<Device> {
-    const existing = await this.findByHwid(deviceData.hwid);
+    const existing = await this.findByIdentity(deviceData.hwid, deviceData.app_id, deviceData.end_user_id);
     if (existing) {
       // Update existing device
       existing.last_ip = deviceData.last_ip || existing.last_ip;
@@ -125,6 +125,13 @@ export class DevicesService {
     return this.devicesRepository.save(
       this.devicesRepository.create(deviceData),
     );
+  }
+
+  private async findByIdentity(hwid: string, appId?: number, endUserId?: number): Promise<Device | null> {
+    return this.devicesRepository.findOne({
+      where: { hwid, app_id: appId, end_user_id: endUserId == null ? IsNull() : endUserId },
+      relations: ["end_user", "app"],
+    });
   }
 
   /**
@@ -168,7 +175,7 @@ export class DevicesService {
     commands: string[];
     message?: string;
   }> {
-    let device = await this.findByHwid(data.hwid);
+    let device = await this.findByIdentity(data.hwid, data.app_id, data.end_user_id);
 
     // 获取应用配置的心跳间隔
     let heartInterval = 60; // 默认60秒
@@ -326,15 +333,12 @@ export class DevicesService {
     appId: number,
     force: boolean = false,
   ): Promise<Device> {
-    let device = await this.findByHwid(hwid);
+    let device = await this.findByIdentity(hwid, appId, endUserId);
 
     if (device) {
       // 设备已存在，检查是否已绑定到其他用户
       if (device.end_user_id && device.end_user_id !== endUserId) {
-        if (!force) {
-          throw new BadRequestException("此设备已绑定到其他用户");
-        }
-        // 强制抢占：允许，但可能需要记录日志或限制频率（此处简化为直接覆盖）
+        throw new BadRequestException("此设备已绑定到其他用户");
       }
       // 更新绑定
       device.end_user_id = endUserId;

@@ -13,13 +13,17 @@ import { Request } from "express";
 import * as crypto from "crypto";
 import { InjectRepository } from "@nestjs/typeorm";
 import { App } from "../../apps/entities/app.entity";
-import { Repository } from "typeorm";
+import { LessThan, Repository } from "typeorm";
+import { SignatureNonce } from "../entities/signature-nonce.entity";
 
 @Injectable()
 export class SignatureGuard implements CanActivate {
+  private nonceChecks = 0;
   constructor(
     @InjectRepository(App)
     private readonly appRepository: Repository<App>,
+    @InjectRepository(SignatureNonce)
+    private readonly nonceRepository: Repository<SignatureNonce>,
     private reflector: Reflector,
   ) { }
 
@@ -42,19 +46,24 @@ export class SignatureGuard implements CanActivate {
     if (!timestamp || !nonce || !signature || !appId) {
       throw new BadRequestException("Missing signature headers");
     }
+    if (!/^[A-Za-z0-9._~-]{16,128}$/.test(nonce)) {
+      throw new BadRequestException("Invalid nonce");
+    }
 
     // 3. Verify Timestamp (±60 seconds)
     const now = Math.floor(Date.now() / 1000);
-    const reqTime = parseInt(timestamp, 10);
-    if (isNaN(reqTime) || Math.abs(now - reqTime) > 60) {
+    const reqTime = Number(timestamp);
+    if (!/^\d{10}$/.test(timestamp) || !Number.isSafeInteger(reqTime) || Math.abs(now - reqTime) > 60) {
       throw new UnauthorizedException("Request timestamp expired");
     }
 
     // 4. Get App Secret
     // We assume the app_id is passed in header 'x-app-id'
-    const app = await this.appRepository.findOne({
-      where: { id: parseInt(appId) },
-    });
+    if (!/^[1-9]\d{0,9}$/.test(appId)) throw new BadRequestException("Invalid App ID");
+    const app = await this.appRepository.createQueryBuilder("app")
+      .addSelect("app.app_secret")
+      .where("app.id = :id", { id: Number(appId) })
+      .getOne();
     if (!app || !app.is_active) {
       throw new UnauthorizedException("Invalid or inactive App ID");
     }
@@ -83,7 +92,10 @@ export class SignatureGuard implements CanActivate {
     // A simpler approach for JSON APIs:
     // Signature = HMAC( app_id + timestamp + nonce + sorted_query_string + JSON.stringify(body), secret )
 
-    const bodyString = (body && Object.keys(body).length) ? JSON.stringify(body) : "";
+    const rawBody = (request as any).rawBody;
+    const bodyString = rawBody instanceof Buffer
+      ? rawBody.toString("utf8")
+      : (body && Object.keys(body).length) ? JSON.stringify(body) : "";
     // Note: JSON.stringify is not deterministic for key order.
     // Client must strictly produce same string, or we use a deterministic serializer.
     // For now, let's assume body is minimal or we just sign the timestamp+nonce for auth,
@@ -95,15 +107,18 @@ export class SignatureGuard implements CanActivate {
     hmac.update(dataToSign);
     const calculatedSignature = hmac.digest("hex");
 
-    if (calculatedSignature !== signature) {
-      // Debug mode support could be added here
-      console.log(`Signature mismatch:
-        Received: ${signature}
-        Calculated: ${calculatedSignature}
-        DataToSign: ${dataToSign}
-        AppSecret: ${appSecret}
-      `);
+    if (!/^[a-f0-9]{64}$/i.test(signature) ||
+        !crypto.timingSafeEqual(Buffer.from(calculatedSignature, "hex"), Buffer.from(signature, "hex"))) {
       throw new UnauthorizedException("Invalid signature");
+    }
+
+    try {
+      await this.nonceRepository.insert({ app_id: app.id, nonce, expires_at: new Date(Date.now() + 120_000) });
+    } catch {
+      throw new UnauthorizedException("请求已处理或 nonce 重放");
+    }
+    if (++this.nonceChecks % 100 === 0) {
+      await this.nonceRepository.delete({ expires_at: LessThan(new Date()) });
     }
 
     // 6. Strict App Isolation Check
@@ -111,8 +126,13 @@ export class SignatureGuard implements CanActivate {
     const paramAppId = request.params.appId;
     const claimedAppId = Array.isArray(paramAppId) ? paramAppId[0] : paramAppId;
 
-    if (claimedAppId && parseInt(claimedAppId, 10) !== app.id) {
+    if (claimedAppId && Number(claimedAppId) !== app.id) {
       throw new ForbiddenException("App ID mismatch: You can only access resources belonging to your App");
+    }
+
+    const authenticatedUser: any = request.user;
+    if (authenticatedUser?.type === "end_user" && Number(authenticatedUser.app_id) !== app.id) {
+      throw new ForbiddenException("会话与应用不匹配");
     }
 
     // Attach app to request for controllers to use

@@ -1,3 +1,5 @@
+import { Admin } from "../users/entities/user.entity";
+import { Device } from "../devices/entities/device.entity";
 import { Module, Global } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AuthService } from "./auth.service";
@@ -15,11 +17,11 @@ import { EndUser } from "../end-users/entities/end-user.entity";
   imports: [
     UsersModule,
     PassportModule,
-    TypeOrmModule.forFeature([EndUser]),
+    TypeOrmModule.forFeature([EndUser, Admin, Device]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>("JWT_SECRET", "secretKey"),
+        secret: configService.getOrThrow<string>("JWT_SECRET"),
         signOptions: { expiresIn: "1d" },
       }),
       inject: [ConfigService],

@@ -1,13 +1,14 @@
-import { Injectable, ForbiddenException } from "@nestjs/common";
+import { Injectable, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { CloudFunction } from "./entities/cloud-function.entity";
 import { App } from "../apps/entities/app.entity";
-import { VM } from "vm2";
+import { getQuickJS, QuickJSContext, QuickJSRuntime } from "quickjs-emscripten";
 import { DataPermissionService, CurrentUser } from "../common/services/data-permission.service";
 
 @Injectable()
 export class CloudFunctionsService {
+  private readonly quickJs = getQuickJS();
   constructor(
     @InjectRepository(CloudFunction)
     private cloudFunctionsRepository: Repository<CloudFunction>,
@@ -18,9 +19,21 @@ export class CloudFunctionsService {
 
   async create(createCloudFunctionDto: any, user: any) {
     const userId = user.userId || user.id;
+    if (!Number.isSafeInteger(Number(createCloudFunctionDto.app_id)) ||
+        typeof createCloudFunctionDto.trigger_name !== "string" ||
+        !/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(createCloudFunctionDto.trigger_name) ||
+        typeof createCloudFunctionDto.code !== "string" ||
+        createCloudFunctionDto.code.length > 128 * 1024) {
+      throw new BadRequestException("云函数参数无效");
+    }
+    const app = await this.appsRepository.findOne({ where: { id: Number(createCloudFunctionDto.app_id) } });
+    if (!app) throw new BadRequestException("应用不存在");
+    await this.dataPermissionService.assertCreator(app.creator_id, user, true);
     return this.cloudFunctionsRepository.save(
       this.cloudFunctionsRepository.create({
-        ...createCloudFunctionDto,
+        trigger_name: createCloudFunctionDto.trigger_name,
+        code: createCloudFunctionDto.code,
+        app_id: app.id,
         creator_id: userId,
       }),
     );
@@ -84,18 +97,34 @@ export class CloudFunctionsService {
       throw new Error("Function not found");
     }
 
-    const vm = new VM({
-      timeout: 1000,
-      sandbox: { ...data },
-    });
-
+    if (func.code.length > 128 * 1024) throw new BadRequestException("云函数代码过大");
+    const jsonData = JSON.stringify(data ?? null);
+    if (jsonData.length > 256 * 1024) throw new BadRequestException("云函数输入过大");
+    const QuickJS = await this.quickJs;
+    const runtime: QuickJSRuntime = QuickJS.newRuntime();
+    runtime.setMemoryLimit(16 * 1024 * 1024);
+    runtime.setMaxStackSize(512 * 1024);
+    const deadline = Date.now() + 1000;
+    runtime.setInterruptHandler(() => Date.now() > deadline);
+    const context: QuickJSContext = runtime.newContext();
     try {
-      // Wrap code in IIFE to allow return statements
-      const wrappedCode = `(function() { ${func.code} })()`;
-      return vm.run(wrappedCode);
-    } catch (e) {
-      console.error(e);
-      return { error: "Execution failed" };
+      // QuickJS is a WebAssembly guest with no Node globals, imports, or host bindings.
+      const wrappedCode = `
+        const input = ${jsonData};
+        (function() { ${func.code}\n })()
+      `;
+      const result = context.evalCode(wrappedCode, "cloud-function.js");
+      if ("error" in result) {
+        const errorValue = context.dump(result.error);
+        result.error.dispose();
+        throw new Error(typeof errorValue === "string" ? errorValue : "execution error");
+      }
+      try { return context.dump(result.value); } finally { result.value.dispose(); }
+    } catch (error) {
+      return { error: error instanceof Error && /interrupt|timeout/i.test(error.message) ? "Execution timed out" : "Execution failed" };
+    } finally {
+      context.dispose();
+      runtime.dispose();
     }
   }
 }

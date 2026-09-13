@@ -1,3 +1,6 @@
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
+import { Public } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Get,
@@ -23,18 +26,25 @@ import { RequirePermissions } from "../access-control/decorators/require-permiss
 import { AdminRole } from "./entities/user.entity";
 
 @ApiTags('用户管理 (Users)')
+@ManagedResource("user")
 @Controller("users")
 export class UsersController {
   constructor(private readonly usersService: UsersService) { }
 
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("register")
   @ApiOperation({ summary: '用户注册（旧接口）', description: '公开用户注册接口，保持向后兼容' })
   @ApiBody({ schema: { type: 'object', properties: { username: { type: 'string' }, password: { type: 'string' }, email: { type: 'string' } } } })
   @ApiResponse({ status: 201, description: '注册成功' })
-  async register(@Body() createUserDto: any) {
-    return this.usersService.create(createUserDto);
+  async register(@Body() createUserDto: PublicRegisterDto) {
+    return this.publicRegister(createUserDto);
   }
 
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post("public-register")
   @ApiOperation({ summary: '公开注册', description: '开发者或代理商公开注册' })
   @ApiBody({ type: PublicRegisterDto })
@@ -57,6 +67,7 @@ export class UsersController {
     };
   }
 
+  @Public()
   @Get("developer-lookup")
   @ApiOperation({ summary: '查询开发者', description: '公开查询开发者用户名，用于代理商注册时选择上级' })
   @ApiQuery({ name: 'username', description: '开发者用户名', required: true })
@@ -66,7 +77,6 @@ export class UsersController {
   }
 
   @Get("profile")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取当前用户信息', description: '获取当前登录用户的完整信息，包括角色和权限' })
   @ApiResponse({ status: 200, description: '成功', schema: {
@@ -109,7 +119,6 @@ export class UsersController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取用户列表', description: '分页查询用户列表。管理员可查看所有用户，非管理员只能查看下属用户' })
   @ApiResponse({ status: 200, description: '成功' })
@@ -125,7 +134,6 @@ export class UsersController {
   }
 
   @Get(":id")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取用户详情', description: '根据ID获取单个用户详情' })
   @ApiParam({ name: 'id', description: '用户ID', type: 'number' })
@@ -136,7 +144,6 @@ export class UsersController {
   }
 
   @Put(":id")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '更新用户', description: '更新用户信息' })
   @ApiParam({ name: 'id', description: '用户ID', type: 'number' })
@@ -152,7 +159,6 @@ export class UsersController {
   }
 
   @Delete(":id")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '删除用户', description: '删除指定用户' })
   @ApiParam({ name: 'id', description: '用户ID', type: 'number' })
@@ -164,7 +170,7 @@ export class UsersController {
   }
 
   @Post("create-developer")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @RequirePermissions('user:create')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建开发者', description: '管理员创建开发者账号。需要 user:create 权限' })
@@ -176,14 +182,14 @@ export class UsersController {
     @Request() req,
     @Body() createAdminDto: CreateAdminDto,
   ) {
-    return this.usersService.createSubUser(req.user.userId, {
+    return this.usersService.createUserWithRoleRestriction(req.user, {
       ...createAdminDto,
       role: AdminRole.DEVELOPER,
     });
   }
 
   @Post("create-agent")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @RequirePermissions('user:create')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建代理商', description: '创建代理商账号。需要 user:create 权限' })
@@ -192,14 +198,14 @@ export class UsersController {
   @ApiResponse({ status: 401, description: '未授权' })
   @ApiResponse({ status: 403, description: '权限不足' })
   async createAgent(@Request() req, @Body() createAdminDto: CreateAdminDto) {
-    return this.usersService.createSubUser(req.user.userId, {
+    return this.usersService.createUserWithRoleRestriction(req.user, {
       ...createAdminDto,
       role: AdminRole.AGENT,
     });
   }
 
   @Post("create")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @RequirePermissions('user:create')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建用户', description: '统一创建用户接口。管理员可创建开发者和代理商，开发者只能创建代理商' })
@@ -212,7 +218,6 @@ export class UsersController {
   }
 
   @Post("change-password")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '修改密码', description: '修改当前用户密码' })
   @ApiBody({ schema: { type: 'object', properties: { password: { type: 'string', description: '新密码' } }, required: ['password'] } })

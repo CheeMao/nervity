@@ -1,3 +1,5 @@
+import { Param, ParseIntPipe } from "@nestjs/common";
+import { GenerateCardDto } from "../cards/dto/generate-card.dto";
 import {
   Controller,
   Get,
@@ -14,7 +16,6 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 
 @ApiTags('代理商 (Agents)')
 @Controller("agents")
-@UseGuards(JwtAuthGuard)
 @ApiBearerAuth('JWT-auth')
 export class AgentsController {
   constructor(private readonly agentsService: AgentsService) {}
@@ -78,14 +79,9 @@ export class AgentsController {
   @ApiResponse({ status: 401, description: '未授权' })
   async generateCards(
     @Request() req,
-    @Body() body: { value: number; app_id: number; count: number },
+    @Body() body: GenerateCardDto,
   ) {
-    return this.agentsService.generateCards(
-      req.user.userId,
-      body.value,
-      body.app_id,
-      body.count,
-    );
+    return this.agentsService.generateCards(req.user, body);
   }
 
   @Get("end-users")
@@ -111,8 +107,8 @@ export class AgentsController {
   @ApiBody({ schema: { type: 'object', properties: { id: { type: 'number', description: '终端用户ID' } }, required: ['id'] } })
   @ApiResponse({ status: 200, description: '解绑成功' })
   @ApiResponse({ status: 401, description: '未授权' })
-  async unbindEndUserHwid(@Request() req, @Body() body: { id: number }) {
-    await this.agentsService.unbindEndUserHwid(req.user.userId, body.id);
+  async unbindEndUserHwid(@Request() req, @Param("id", ParseIntPipe) id: number) {
+    await this.agentsService.unbindEndUserHwid(req.user.userId, id);
     return { message: "HWID 解绑成功" };
   }
 }

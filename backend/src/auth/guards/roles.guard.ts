@@ -21,6 +21,9 @@ export class RolesGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
 
+    if (user?.type === "end_user") return false;
+    if (user?.role === "admin") return true;
+
     // If permissions are required, check them from JWT payload
     if (requiredPermissions && requiredPermissions.length > 0) {
       if (!user) return false;

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, SelectQueryBuilder } from "typeorm";
 import { Admin, AdminRole } from "../../users/entities/user.entity";
@@ -8,6 +8,9 @@ import { Admin, AdminRole } from "../../users/entities/user.entity";
  */
 export interface CurrentUser {
   id: number;
+  type?: string;
+  session_id?: string;
+  hwid?: string;
   userId?: number; // 可选，有些地方可能只传 id
   role: string;
   role_name?: string;
@@ -50,13 +53,35 @@ export class DataPermissionService {
     private readonly adminRepository: Repository<Admin>,
   ) {}
 
+  assertAdmin(currentUser: CurrentUser): number {
+    const id = Number(currentUser?.userId || currentUser?.id);
+    if (!Number.isSafeInteger(id) || id < 1 ||
+        !Object.values(AdminRole).includes(currentUser?.role as AdminRole) ||
+        currentUser?.type === "end_user") {
+      throw new ForbiddenException("缺少有效的后台用户身份");
+    }
+    return id;
+  }
+
+  async assertCreator(creatorId: number | string, currentUser: CurrentUser, viewParent = false): Promise<void> {
+    const id = this.assertAdmin(currentUser);
+    if (currentUser.role === AdminRole.ADMIN) return;
+    const allowed = await this.getAllowedUserIds(currentUser);
+    if (viewParent && currentUser.role === AdminRole.AGENT && currentUser.parent_id) {
+      allowed.push(Number(currentUser.parent_id));
+    }
+    if (!creatorId || !allowed.map(Number).includes(Number(creatorId))) {
+      throw new ForbiddenException("无权访问该资源");
+    }
+  }
+
   /**
    * 获取用户可访问的所有用户 ID 列表
    * @param currentUser 当前用户信息
    * @returns 允许访问的用户 ID 数组
    */
   async getAllowedUserIds(currentUser: CurrentUser): Promise<number[]> {
-    const userId = currentUser.userId || currentUser.id;
+    const userId = this.assertAdmin(currentUser);
 
     // admin 可以访问所有
     if (currentUser.role === AdminRole.ADMIN) {
@@ -82,6 +107,7 @@ export class DataPermissionService {
    * @param readAllPermission 全部读取权限 code（可选）
    */
   canAccessAll(currentUser: CurrentUser, readAllPermission?: string): boolean {
+    this.assertAdmin(currentUser);
     // admin 角色可以访问所有
     if (currentUser.role === AdminRole.ADMIN) {
       return true;
@@ -134,9 +160,9 @@ export class DataPermissionService {
     const tableAlias = alias || queryBuilder.alias;
 
     // 获取用户 ID，如果没有则不做过滤（避免 bug）
-    const userId = currentUser.userId || currentUser.id;
+    const userId = this.assertAdmin(currentUser);
     if (!userId) {
-      return queryBuilder;
+      throw new ForbiddenException("缺少用户身份");
     }
 
     // 如果用户可以访问所有数据，不添加过滤条件
@@ -211,7 +237,7 @@ export class DataPermissionService {
       return undefined;
     }
 
-    const userId = currentUser.userId || currentUser.id;
+    const userId = this.assertAdmin(currentUser);
 
     if (currentUser.role === AdminRole.AGENT) {
       return userId;

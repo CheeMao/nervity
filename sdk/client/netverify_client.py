@@ -498,16 +498,22 @@ class NetVerifyClient:
         url = f"{self.base_url}{endpoint}"
 
         # 基础请求头
-        headers = self._get_headers()
+        headers = self._get_headers(with_auth=True)
 
         # 添加签名头
         signature_headers = self._get_signature_headers(data, params)
         headers.update(signature_headers)
 
+        request_body = None
+        if data is not None:
+            # Keep the exact compact UTF-8 bytes used by _generate_signature;
+            # the server signs rawBody to prevent parser/re-serialization ambiguity.
+            request_body = json.dumps(data, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+            headers["Content-Length"] = str(len(request_body))
         response = requests.request(
             method=method,
             url=url,
-            json=data,
+            data=request_body,
             params=params,
             headers=headers,
             timeout=self.timeout
@@ -859,7 +865,7 @@ class NetVerifyClient:
             "app_id": app_id or self.app_id,
             "hwid": hwid
         }
-        return self._request("POST", "/cards/trial", data=data)
+        return self._request("POST", "/cards/trial", data=data, with_auth=True)
 
     # ==================== 心跳保活 ====================
 

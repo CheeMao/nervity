@@ -5,6 +5,8 @@ import {
   IsNumber,
   IsBoolean,
   Min,
+  MinLength,
+  MaxLength,
 } from "class-validator";
 import { AdminRole } from "../entities/user.entity";
 
@@ -32,6 +34,8 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(8)
+  @MaxLength(72)
   password?: string;
 
   @IsOptional()

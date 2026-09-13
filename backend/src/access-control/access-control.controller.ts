@@ -1,3 +1,4 @@
+import { Roles } from "../auth/decorators/roles.decorator";
 import {
   Controller,
   Get,
@@ -15,8 +16,9 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { RequirePermissions } from "./decorators/require-permissions.decorator";
 
 @ApiTags('访问控制 (Access Control)')
+@Roles("admin")
 @Controller("access-control")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('JWT-auth')
 export class AccessControlController {
   constructor(private readonly accessControlService: AccessControlService) {}

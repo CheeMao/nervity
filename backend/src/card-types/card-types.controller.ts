@@ -1,3 +1,4 @@
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Get,
@@ -20,8 +21,9 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { RequirePermissions } from "../access-control/decorators/require-permissions.decorator";
 
 @ApiTags('卡密类型 (Card Types)')
+@ManagedResource("card-type")
 @Controller("card-types")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('JWT-auth')
 export class CardTypesController {
   constructor(private readonly cardTypesService: CardTypesService) { }

@@ -17,6 +17,8 @@ import { AccessControlService } from "../access-control/access-control.service";
 import { BalanceLogsService } from "../balance-logs/balance-logs.service";
 import { BalanceLogType } from "../balance-logs/entities/balance-log.entity";
 import { Agent } from "../agents/entities/agent.entity";
+import { BalanceLog } from "../balance-logs/entities/balance-log.entity";
+import { toCents } from "../common/utils/money";
 
 @Injectable()
 export class UsersService {
@@ -29,23 +31,8 @@ export class UsersService {
     private agentsRepository: Repository<Agent>,
   ) { }
 
-  async create(createUserDto: any): Promise<Admin> {
-    if (createUserDto.password) {
-      createUserDto.password = await bcrypt.hash(createUserDto.password, 10);
-    }
-
-    let role;
-    if (createUserDto.role_id) {
-      role = await this.accessControlService.findRoleById(
-        createUserDto.role_id,
-      );
-    }
-
-    const user = this.usersRepository.create({
-      ...createUserDto,
-      role_relation: role,
-    }) as unknown as Admin;
-    return await this.usersRepository.save(user);
+  async create(dto: PublicRegisterDto): Promise<Admin> {
+    return this.publicRegister(dto);
   }
 
   async findAll(
@@ -137,6 +124,9 @@ export class UsersService {
         "role_id",
         "is_active",
         "parent_id",
+        "is_totp_enabled",
+        "expire_at",
+        "token_version",
       ],
       relations: ["role_relation", "role_relation.permissions"],
     });
@@ -167,7 +157,8 @@ export class UsersService {
 
     // 越权检查：调用方不能把目标用户分配为高于自己可分配集合的角色
     const wantsRoleChange =
-      updateUserDto.role !== undefined || updateUserDto.role_id !== undefined;
+      (updateUserDto.role !== undefined && updateUserDto.role !== user.role) ||
+      (updateUserDto.role_id !== undefined && Number(updateUserDto.role_id) !== Number(user.role_id));
     if (wantsRoleChange) {
       if (!operatorRoleName) {
         // 没有 role_name 上下文一律拒绝改角色（保守处理，避免越权）
@@ -232,29 +223,37 @@ export class UsersService {
       delete updateUserDto.password;
     }
 
-    const oldBalance = Number(user.balance);
-    Object.assign(user, updateUserDto);
-    const savedUser = await this.usersRepository.save(user);
-
-    // Check if balance changed
-    if (
-      updateUserDto.balance !== undefined &&
-      Number(updateUserDto.balance) !== oldBalance
-    ) {
-      const diff = Number(updateUserDto.balance) - oldBalance;
-      await this.balanceLogsService.logChange(
-        id,
-        diff,
-        BalanceLogType.ADMIN_ADJUST,
-        Number(savedUser.balance),
-        operatorId,
-        "管理员/系统 调整余额",
-      );
-    }
+    const savedUser = await this.usersRepository.manager.transaction(async manager => {
+      const locked = await manager.findOne(Admin, { where: { id }, lock: { mode: "pessimistic_write" } });
+      if (!locked) throw new NotFoundException(`用户 ID ${id} 不存在`);
+      const patch: any = {};
+      for (const key of ["username", "email", "role", "role_id", "is_active", "expire_at", "remark"]) {
+        if (updateUserDto[key] !== undefined) patch[key] = updateUserDto[key];
+      }
+      if (updateUserDto.role && user.role_id) patch.role_id = user.role_id;
+      if (updateUserDto.password) patch.password = updateUserDto.password;
+      if (wantsRoleChange) patch.token_version = locked.token_version + 1;
+      if (updateUserDto.password || updateUserDto.is_active !== undefined) patch.token_version = locked.token_version + 1;
+      if (updateUserDto.balance !== undefined) {
+        const balanceCents = toCents(updateUserDto.balance);
+        const oldCents = toCents(locked.balance);
+        patch.balance = balanceCents / 100;
+        const diff = balanceCents - oldCents;
+        if (diff !== 0) {
+          await manager.save(BalanceLog, manager.create(BalanceLog, {
+            user_id: id, operator_id: operatorId, amount: diff / 100,
+            balance_after: balanceCents / 100, type: BalanceLogType.ADMIN_ADJUST,
+            description: "管理员/系统 调整余额",
+          }));
+        }
+      }
+      await manager.update(Admin, id, patch);
+      return manager.findOne(Admin, { where: { id }, relations: ["role_relation", "agent"] });
+    });
 
     // Update Agent profile if applicable
     if (
-      user.role_relation?.name === 'Agent' &&
+      (savedUser as any)?.role_relation?.name === 'Agent' &&
       (updateUserDto.level !== undefined ||
         updateUserDto.discount_rate !== undefined)
     ) {
@@ -317,7 +316,14 @@ export class UsersService {
     }
 
     const newUser = this.usersRepository.create({
-      ...createDto,
+      username: createDto.username,
+      email: createDto.email,
+      expire_at: createDto.expire_at,
+      is_active: createDto.is_active ?? true,
+      remark: createDto.remark,
+      agent_level: createDto.level ?? 0,
+      balance: 0,
+      role: createDto.role,
       password: hashedPassword,
       parent_id: creatorId,
       role_relation: roleRelation,
@@ -349,7 +355,7 @@ export class UsersService {
     currentUser: any,
     createDto: CreateAdminDto,
   ): Promise<Admin> {
-    const currentRoleName = currentUser.role_name;
+    const currentRoleName = currentUser.role === "admin" ? "Super Admin" : currentUser.role === "developer" ? "Developer" : currentUser.role_name;
 
     // 检查用户名是否已存在
     const existingUser = await this.usersRepository.findOne({
@@ -519,6 +525,10 @@ export class UsersService {
     return this.usersRepository.update(id, { totp_secret: secret });
   }
 
+  async setTotpEnabled(id: number, enabled: boolean) {
+    await this.usersRepository.update(id, { is_totp_enabled: enabled, ...(enabled ? {} : { totp_secret: null }), token_version: () => "token_version + 1" });
+  }
+
   async findWithTotpSecret(id: number): Promise<Admin> {
     return this.usersRepository
       .createQueryBuilder("user")
@@ -528,7 +538,8 @@ export class UsersService {
   }
 
   async changePassword(userId: number, password: string): Promise<void> {
+    if (typeof password !== "string" || password.length < 8 || Buffer.byteLength(password) > 72) throw new BadRequestException("密码需为 8–72 字节");
     const hashedPassword = await bcrypt.hash(password, 10);
-    await this.usersRepository.update(userId, { password: hashedPassword });
+    await this.usersRepository.update(userId, { password: hashedPassword, token_version: () => "token_version + 1" });
   }
 }

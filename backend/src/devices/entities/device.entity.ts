@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from "typeorm";
 import { EndUser } from "../../end-users/entities/end-user.entity";
 import { App } from "../../apps/entities/app.entity";
@@ -17,6 +18,7 @@ export enum DeviceStatus {
 }
 
 @Entity()
+@Index("uq_device_app_user_hwid", ["app_id", "end_user_id", "hwid"], { unique: true })
 export class Device {
   @PrimaryGeneratedColumn("increment")
   id: number;

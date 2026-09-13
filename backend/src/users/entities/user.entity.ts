@@ -55,6 +55,9 @@ export class Admin {
   @Column({ select: false, nullable: true })
   totp_secret: string;
 
+  @Column({ type: "int", default: 0 })
+  token_version: number;
+
   @CreateDateColumn()
   created_at: Date;
 

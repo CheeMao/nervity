@@ -1,3 +1,4 @@
+import { Roles } from "../auth/decorators/roles.decorator";
 import {
   Controller,
   Get,
@@ -20,8 +21,9 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { RequirePermissions } from "./decorators/require-permissions.decorator";
 
 @ApiTags('黑名单 (Blacklist)')
+@Roles("admin")
 @Controller("access-control/blacklist")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @RequirePermissions('blacklist:read')
 @ApiBearerAuth('JWT-auth')
 export class BlacklistController {
@@ -36,7 +38,7 @@ export class BlacklistController {
   @ApiResponse({ status: 403, description: '权限不足' })
   create(@Body() createDto: CreateBlacklistDto, @Req() req: any) {
     const user = req.user;
-    return this.blacklistService.create(createDto, user.sub, user.username);
+    return this.blacklistService.create(createDto, user.userId, user.username);
   }
 
   @Get()

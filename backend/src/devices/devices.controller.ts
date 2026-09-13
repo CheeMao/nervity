@@ -1,3 +1,4 @@
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Get,
@@ -21,14 +22,16 @@ import { HeartbeatDto } from "./dto/heartbeat.dto";
 import { BanDeviceDto } from "./dto/ban-device.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ExcelExportUtil } from "../common/utils/excel-export.util";
+import { Public } from "../auth/decorators/access-scope.decorator";
+import { OptionalJwtAuthGuard } from "../auth/guards/optional-jwt-auth.guard";
 
 @ApiTags('设备管理 (Devices)')
+@ManagedResource("device")
 @Controller("devices")
 export class DevicesController {
   constructor(private readonly devicesService: DevicesService) { }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取设备列表', description: '分页查询设备列表。admin看全部，developer看自己和下级，agent只看自己' })
   @ApiQuery({ name: 'page', description: '页码', required: false, type: 'number' })
@@ -71,6 +74,20 @@ export class DevicesController {
     return this.devicesService.findAllPaginated(pageNum, size, filters, currentUser);
   }
 
+  // Static routes must be registered before /:id so "export" is not parsed as an ID.
+  @Get("export")
+  async exportBeforeId(
+    @Query("status") status: DeviceStatus,
+    @Query("is_banned") isBanned: string,
+    @Query("user_id") userId: string,
+    @Query("app_id") appId: string,
+    @Query("keyword") keyword: string,
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    return this.export(status, isBanned, userId, appId, keyword, req, res);
+  }
+
   @Get("online-count")
   @ApiOperation({ summary: '获取在线设备数量', description: '获取当前在线设备总数' })
   @ApiQuery({ name: 'app_id', description: '应用ID（可选）', required: false, type: 'number' })
@@ -82,7 +99,8 @@ export class DevicesController {
   }
 
   @Post("heartbeat")
-  @UseGuards(SignatureGuard)
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard, SignatureGuard)
   @ApiOperation({ summary: '客户端心跳上报', description: '客户端定期上报心跳，需要签名验证' })
   @ApiBody({ type: HeartbeatDto })
   @ApiResponse({
@@ -193,7 +211,6 @@ export class DevicesController {
   }
 
   @Put(":id/unbind")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '解绑设备', description: '从用户移除设备关联' })
   @ApiParam({ name: 'id', description: '设备ID', type: 'number' })
@@ -205,7 +222,6 @@ export class DevicesController {
   }
 
   @Get("by-user/:userId")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取用户绑定的设备', description: '获取指定用户绑定的所有设备' })
   @ApiParam({ name: 'userId', description: '用户ID', type: 'number' })
@@ -216,8 +232,6 @@ export class DevicesController {
     return { devices, count: devices.length };
   }
 
-  @Get("export")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("JWT-auth")
   @ApiOperation({ summary: "导出设备", description: "导出设备数据为 Excel 文件" })
   async export(
@@ -260,7 +274,7 @@ export class DevicesController {
       "创建时间": ExcelExportUtil.formatDate(device.created_at),
     }));
 
-    const buffer = ExcelExportUtil.exportToBuffer(exportData, "devices");
+    const buffer = await ExcelExportUtil.exportToBuffer(exportData, "devices");
 
     res.setHeader(
       "Content-Type",

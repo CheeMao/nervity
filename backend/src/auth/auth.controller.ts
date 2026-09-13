@@ -1,3 +1,4 @@
+import { Public } from "./decorators/access-scope.decorator";
 import { Controller, Request, Post, UseGuards, Body } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from "@nestjs/swagger";
@@ -10,9 +11,10 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  @Public()
   @Post("login")
   @UseGuards(ThrottlerGuard, AuthGuard("local"))
-  @Throttle({ login: { limit: 30, ttl: 60_000 } })
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({ summary: '用户登录', description: '使用用户名和密码登录系统，如果启用了2FA需要提供验证码。每个 IP 每分钟最多 30 次尝试。' })
   @ApiBody({
     schema: {
@@ -38,7 +40,6 @@ export class AuthController {
   }
 
   @Post("2fa/generate")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '生成2FA密钥', description: '为当前用户生成双因素认证(TOTP)密钥和二维码' })
   @ApiResponse({ status: 200, description: '生成成功', schema: {
@@ -54,7 +55,6 @@ export class AuthController {
   }
 
   @Post("2fa/enable")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '启用2FA', description: '使用验证码启用双因素认证' })
   @ApiBody({
@@ -70,11 +70,10 @@ export class AuthController {
   @ApiResponse({ status: 400, description: '验证码错误' })
   @ApiResponse({ status: 401, description: '未授权' })
   async enableTotp(@Request() req, @Body() body) {
-    return this.authService.enableTotp(req.user.sub, body.code);
+    return this.authService.enableTotp(req.user.userId, body.code);
   }
 
   @Post("2fa/disable")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '禁用2FA', description: '使用验证码禁用双因素认证' })
   @ApiBody({
@@ -90,6 +89,6 @@ export class AuthController {
   @ApiResponse({ status: 400, description: '验证码错误' })
   @ApiResponse({ status: 401, description: '未授权' })
   async disableTotp(@Request() req, @Body() body) {
-    return this.authService.disableTotp(req.user.sub, body.code);
+    return this.authService.disableTotp(req.user.userId, body.code);
   }
 }

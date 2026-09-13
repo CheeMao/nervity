@@ -13,6 +13,7 @@ export class ClientRegisterDto {
   @IsString()
   @IsNotEmpty({ message: "密码不能为空" })
   @MinLength(6, { message: "密码至少6个字符" })
+  @MaxLength(72, { message: "密码最多72个字符" })
   password: string;
 
   @ApiProperty({ description: "应用ID", example: 1 })
@@ -45,6 +46,7 @@ export class ClientLoginDto {
   @ApiProperty({ description: "密码", example: "password123" })
   @IsString()
   @IsNotEmpty({ message: "密码不能为空" })
+  @MaxLength(72, { message: "密码最多72个字符" })
   password: string;
 
   @ApiProperty({ description: "应用ID", example: 1 })

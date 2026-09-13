@@ -67,7 +67,10 @@ export class AppsService {
   }
 
   async findBySecret(secret: string) {
-    return this.appsRepository.findOne({ where: { app_secret: secret } });
+    return this.appsRepository.createQueryBuilder("app")
+      .addSelect("app.app_secret")
+      .where("app.app_secret = :secret", { secret })
+      .getOne();
   }
 
   async update(id: number, updateAppDto: UpdateAppDto) {
@@ -108,19 +111,19 @@ export class AppsService {
           .where('app_id = :id', { id })
           .execute();
 
-        // 删除终端用户
-        await queryRunner.manager
-          .createQueryBuilder()
-          .delete()
-          .from('end_users')
-          .where('app_id = :id', { id })
-          .execute();
-
         // 删除卡密
         await queryRunner.manager
           .createQueryBuilder()
           .delete()
           .from('card')
+          .where('app_id = :id', { id })
+          .execute();
+
+        // 卡密的 used_by 外键指向终端用户，必须先删卡再删用户。
+        await queryRunner.manager
+          .createQueryBuilder()
+          .delete()
+          .from('end_users')
           .where('app_id = :id', { id })
           .execute();
 

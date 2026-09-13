@@ -1,3 +1,6 @@
+import { OptionalJwtAuthGuard } from "../auth/guards/optional-jwt-auth.guard";
+import { Public } from "../auth/decorators/access-scope.decorator";
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Post,
@@ -16,12 +19,14 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { SignatureGuard } from "../common/guards/signature.guard";
 
 @ApiTags('云函数 (Cloud Functions)')
+@ManagedResource("cloud")
 @Controller("cloud")
 export class CloudFunctionsController {
   constructor(private readonly cloudFunctionsService: CloudFunctionsService) { }
 
+  @Public()
   @Post("run/:appId/:triggerName")
-  @UseGuards(SignatureGuard)
+  @UseGuards(OptionalJwtAuthGuard, SignatureGuard)
   @ApiOperation({ summary: '执行云函数', description: '执行指定应用的云函数' })
   @ApiParam({ name: 'appId', description: '应用ID', type: 'number' })
   @ApiParam({ name: 'triggerName', description: '触发器名称' })
@@ -38,7 +43,6 @@ export class CloudFunctionsController {
   }
 
   @Post("create")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '创建云函数', description: '创建新的云函数。非管理员只能为自己的应用创建云函数' })
   @ApiBody({
@@ -60,7 +64,6 @@ export class CloudFunctionsController {
   }
 
   @Get("list")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取云函数列表', description: '分页查询云函数列表。admin看全部，developer看自己和下级，agent只看自己' })
   @ApiQuery({ name: 'page', description: '页码', required: false, type: 'number' })

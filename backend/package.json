@@ -15,7 +15,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "migration:run": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
+    "migration:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert"
   },
   "keywords": [],
   "author": "",
@@ -35,25 +37,23 @@
     "@types/bcrypt": "^6.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
-    "@types/uuid": "^10.0.0",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "crypto-js": "^4.2.0",
+    "exceljs": "^4.4.0",
+    "multer": "^2.3.0",
     "mysql2": "^3.17.0",
     "node-rsa": "^1.1.1",
     "otplib": "^13.2.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
-    "pg": "^8.18.0",
     "qrcode": "^1.5.4",
+    "quickjs-emscripten": "^0.31.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "typeorm": "^0.3.28",
-    "uuid": "^13.0.0",
-    "vm2": "^3.10.4",
-    "xlsx": "^0.18.5"
+    "typeorm": "^0.3.28"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.16",
@@ -71,6 +71,11 @@
     "jest": "^30.2.0",
     "prettier": "^3.8.1",
     "supertest": "^7.2.2",
-    "ts-jest": "^29.4.6"
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2"
+  },
+  "overrides": {
+    "multer": "$multer",
+    "minimatch": "10.2.6"
   }
 }

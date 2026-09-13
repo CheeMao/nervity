@@ -1,3 +1,6 @@
+import { GenerateCardDto } from "./dto/generate-card.dto";
+import { ManagedResource } from "../auth/decorators/access-scope.decorator";
+import { ClientOnly } from "../auth/decorators/access-scope.decorator";
 import {
   Controller,
   Get,
@@ -22,12 +25,12 @@ import { Request as RequestObj } from "@nestjs/common";
 import { ExcelExportUtil } from "../common/utils/excel-export.util";
 
 @ApiTags('卡密管理 (Cards)')
+@ManagedResource("card")
 @Controller("cards")
 export class CardsController {
   constructor(private readonly cardsService: CardsService) { }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '获取卡密列表', description: '分页查询卡密列表。admin看全部，developer看自己和下级，agent只看自己' })
   @ApiQuery({ name: 'page', description: '页码', required: false, type: 'number' })
@@ -74,7 +77,6 @@ export class CardsController {
   }
 
   @Post("generate")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '生成卡密', description: '批量生成卡密。代理商只能为上级开发者的应用生成卡密' })
   @ApiBody({
@@ -95,7 +97,7 @@ export class CardsController {
   @ApiResponse({ status: 201, description: '生成成功' })
   @ApiResponse({ status: 401, description: '未授权' })
   @ApiResponse({ status: 403, description: '无权为该应用生成卡密' })
-  generate(@Body() createCardDto: any, @Request() req) {
+  generate(@Body() createCardDto: GenerateCardDto, @Request() req) {
     const currentUser = {
       id: req.user.userId,
       userId: req.user.userId,
@@ -106,9 +108,10 @@ export class CardsController {
     return this.cardsService.generate(createCardDto, currentUser);
   }
 
+  @ClientOnly()
   @Post("redeem")
-  @UseGuards(JwtAuthGuard, ThrottlerGuard)
-  @Throttle({ redeem: { limit: 10, ttl: 60_000 } })
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: '兑换卡密',
@@ -133,7 +136,7 @@ export class CardsController {
     // 必须登录，使用当前登录用户的 userId
     try {
       const userId = req.user.userId;
-      return await this.cardsService.useCard(body.code, userId, body.hwid || null, null);
+      return await this.cardsService.useCard(body.code, userId, req.user.hwid, null);
     } catch (e: any) {
       console.error("Redeem Error:", e);
       // Throw as BadRequest to see message in client
@@ -141,6 +144,7 @@ export class CardsController {
     }
   }
 
+  @ClientOnly()
   @Post("trial")
   @ApiOperation({ summary: '试用激活', description: '申请应用试用。每个设备只能试用一次' })
   @ApiBody({
@@ -155,8 +159,8 @@ export class CardsController {
   })
   @ApiResponse({ status: 200, description: '试用激活成功' })
   @ApiResponse({ status: 400, description: '试用失败（已使用过试用或应用未启用试用）' })
-  async trial(@Body() body: { app_id: number; hwid: string }) {
-    return this.cardsService.handleTrialActivation(body.app_id, body.hwid);
+  async trial(@Body() body: { app_id: number; hwid: string }, @Request() req) {
+    return this.cardsService.handleTrialActivation(req.user.app_id, req.user.hwid, req.user.userId);
   }
 
   @Put(":id/ban")
@@ -184,7 +188,6 @@ export class CardsController {
   }
 
   @Get("export")
-  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("JWT-auth")
   @ApiOperation({ summary: "导出卡密", description: "导出卡密数据为 Excel 文件" })
   async export(
@@ -228,7 +231,7 @@ export class CardsController {
       "使用时间": ExcelExportUtil.formatDate(card.used_at),
     }));
 
-    const buffer = ExcelExportUtil.exportToBuffer(exportData, "cards");
+    const buffer = await ExcelExportUtil.exportToBuffer(exportData, "cards");
 
     res.setHeader(
       "Content-Type",

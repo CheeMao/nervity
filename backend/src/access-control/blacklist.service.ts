@@ -88,31 +88,12 @@ export class BlacklistService implements OnModuleInit {
     return { list, total };
   }
 
-  isBlocked(ip: string, hwid?: string): { blocked: boolean; reason?: string } {
-    // Check IP
-    if (ip) {
-      const ipKey = `${BlacklistType.IP}:${ip}`;
-      if (this.checkCache(ipKey))
-        return { blocked: true, reason: "IP blocked" };
-    }
-
-    // Check HWID
-    if (hwid) {
-      const hwidKey = `${BlacklistType.HWID}:${hwid}`;
-      if (this.checkCache(hwidKey))
-        return { blocked: true, reason: "HWID blocked" };
-    }
-
-    return { blocked: false };
-  }
-
-  private checkCache(key: string): boolean {
-    if (!this.blacklistCache.has(key)) return false;
-    const expiredAt = this.blacklistCache.get(key);
-    if (expiredAt && nowCN() > expiredAt) {
-      this.blacklistCache.delete(key); // Lazy remove
-      return false;
-    }
-    return true;
+  async isBlocked(ip: string, hwid?: string): Promise<{ blocked: boolean; reason?: string }> {
+    const values = [];
+    if (ip) values.push({ type: BlacklistType.IP, value: ip.replace(/^::ffff:/, "") });
+    if (hwid) values.push({ type: BlacklistType.HWID, value: hwid });
+    if (!values.length) return { blocked: false };
+    const where = values.flatMap(value => [{ ...value, expired_at: IsNull() }, { ...value, expired_at: MoreThan(new Date()) }]);
+    return { blocked: await this.blacklistRepository.exists({ where }) };
   }
 }

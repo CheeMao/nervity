@@ -5,6 +5,7 @@ import {
   CallHandler,
   Logger,
   Inject,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { Observable } from "rxjs";
 import { map } from "rxjs/operators";
@@ -82,7 +83,7 @@ export class ResponseEncryptionInterceptor implements NestInterceptor {
         const publicKey = this.resolvePublicKey(request);
 
         if (!publicKey) {
-          return data;
+          throw new InternalServerErrorException("客户端未协商响应公钥");
         }
 
         try {
@@ -106,13 +107,8 @@ export class ResponseEncryptionInterceptor implements NestInterceptor {
    */
   private resolvePublicKey(request: any): string | null {
     // 1. 已登录用户：从 SessionKeyStore 获取会话公钥
-    const userId = request.user?.userId || request.user?.id;
-    if (userId) {
-      const sessionKey = this.sessionKeyStore.getSessionKey(userId);
-      if (sessionKey) {
-        return sessionKey;
-      }
-    }
+    const sessionKey = request.user?.session_public_key;
+    if (sessionKey) return sessionKey;
 
     // 2. 登录请求：从请求体中获取（login 接口还没有 JWT，用 body 中的 session_public_key）
     if (request.body?.session_public_key) {

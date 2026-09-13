@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 export class ExcelExportUtil {
   /**
@@ -7,16 +7,26 @@ export class ExcelExportUtil {
    * @param filename 文件名（不含扩展名）
    * @returns Buffer
    */
-  static exportToBuffer(data: Record<string, any>[], filename: string): Buffer {
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-
-    // 设置列宽
-    const colWidths = this.calculateColumnWidths(data);
-    worksheet["!cols"] = colWidths;
-
-    return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+  static async exportToBuffer(data: Record<string, any>[], filename: string): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Sheet1");
+    const headers = data.length ? Object.keys(data[0]) : [];
+    worksheet.columns = headers.map((header) => ({
+      header,
+      key: header,
+      width: this.calculateColumnWidths(data)[headers.indexOf(header)]?.wch || 12,
+    }));
+    for (const row of data) {
+      const safeRow: Record<string, any> = {};
+      for (const header of headers) {
+        const value = row[header];
+        safeRow[header] = typeof value === "string" && /^[=+\-@]/.test(value) ? `'${value}` : value;
+      }
+      worksheet.addRow(safeRow);
+    }
+    worksheet.getRow(1).font = { bold: true };
+    const output = await workbook.xlsx.writeBuffer();
+    return Buffer.from(output);
   }
 
   /**

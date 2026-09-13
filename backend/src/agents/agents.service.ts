@@ -10,7 +10,9 @@ import { Agent } from "./entities/agent.entity";
 import { Admin } from "../users/entities/user.entity";
 import { Card, CardStatus } from "../cards/entities/card.entity";
 import { EndUser } from "../end-users/entities/end-user.entity";
-import { v4 as uuidv4 } from "uuid";
+import { CardsService } from "../cards/cards.service";
+import { EndUsersService } from "../end-users/end-users.service";
+import { GenerateCardDto } from "../cards/dto/generate-card.dto";
 import { BalanceLogsService } from "../balance-logs/balance-logs.service";
 import { BalanceLogType } from "../balance-logs/entities/balance-log.entity";
 
@@ -36,6 +38,8 @@ export class AgentsService {
     @InjectRepository(EndUser)
     private endUsersRepository: Repository<EndUser>,
     private balanceLogsService: BalanceLogsService,
+    private cardsService: CardsService,
+    private endUsersService: EndUsersService,
   ) { }
 
   async findByUserId(userId: number) {
@@ -140,61 +144,9 @@ export class AgentsService {
     return { list, total };
   }
 
-  async generateCards(
-    userId: number,
-    value: number,
-    appId: number,
-    count: number,
-  ) {
-    const agent = await this.agentsRepository.findOne({
-      where: { user: { id: userId } },
-      relations: ["user"],
-    });
-
-    if (!agent) {
-      throw new ForbiddenException("非代理商账户");
-    }
-
-    // 计算卡密成本（根据折扣率）
-    // value is duration in seconds. 1 day = 86400
-    const unitCost = (value / 86400) * (Number(agent.discount_rate) / 100);
-    const totalCost = unitCost * count;
-
-    if (Number(agent.user.balance) < totalCost) {
-      throw new ForbiddenException("余额不足");
-    }
-
-    // 扣除余额
-    const newBalance = Number(agent.user.balance) - totalCost;
-    await this.usersRepository.update(userId, {
-      balance: newBalance,
-    });
-
-    // 记录余额变动日志
-    await this.balanceLogsService.logChange(
-      userId,
-      -totalCost,
-      BalanceLogType.CARD_GENERATION,
-      newBalance,
-      userId, // 代理商自己操作
-      `生成 ${count} 张时长卡 (时长 ${value}秒)`,
-    );
-
-    // 生成卡密
-    const cards: Partial<Card>[] = [];
-    for (let i = 0; i < count; i++) {
-      cards.push({
-        code: uuidv4().replace(/-/g, "").toUpperCase().slice(0, 16),
-        type: "time",
-        value,
-        status: CardStatus.UNUSED,
-        app_id: appId,
-        creator_id: userId,
-      });
-    }
-
-    const result = await this.cardsRepository.save(cards);
-    return { created: result.length, cards: result.map((c) => c.code) };
+  async generateCards(currentUser: any, dto: GenerateCardDto) {
+    const cards = await this.cardsService.generate(dto, currentUser);
+    return { created: cards.length, cards: cards.map(card => card.code) };
   }
 
   async getEndUsers(agentId: number, page: number, pageSize: number) {
@@ -220,11 +172,10 @@ export class AgentsService {
       throw new NotFoundException("终端用户不存在");
     }
 
-    if (endUser.card_creator_id !== agentId) {
+    if (Number(endUser.card_creator_id) !== Number(agentId)) {
       throw new ForbiddenException("无权操作此用户");
     }
 
-    endUser.hwid = null;
-    await this.endUsersRepository.save(endUser);
+    await this.endUsersService.unbindHwid(endUser.id);
   }
 }

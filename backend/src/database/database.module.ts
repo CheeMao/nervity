@@ -9,16 +9,19 @@ import { DataSource } from "typeorm";
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        type: configService.get<string>("DB_TYPE", "postgres") as "postgres" | "mysql",
+        type: "mysql",
         timezone: "+08:00", // 东八区（北京时间）
         host: configService.get<string>("DB_HOST", "localhost"),
-        port: configService.get<number>("DB_PORT", 3306),
+        port: Number(configService.get<string>("DB_PORT", "3306")),
         username: configService.get<string>("DB_USERNAME", "root"),
         password: configService.get<string>("DB_PASSWORD", "root"),
         database: configService.get<string>("DB_DATABASE", "netverify"),
         entities: [__dirname + "/../**/*.entity{.ts,.js}"],
         extra: { dateStrings: true }, // 让 mysql2 返回日期字符串
         synchronize: false, // 禁止自动同步，避免外键问题
+        migrations: [__dirname + "/migrations/*{.ts,.js}"],
+        migrationsRun: configService.get<string>("RUN_MIGRATIONS", "false") === "true",
+        migrationsTableName: "typeorm_migrations",
       }),
     }),
   ],

@@ -1,3 +1,6 @@
+import { TrialClaim } from "./entities/trial-claim.entity";
+import { licenseStatus } from "../common/utils/license";
+import { EntityManager } from "typeorm";
 import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Like, FindOptionsWhere, In } from "typeorm";
@@ -15,6 +18,7 @@ import { AdminRole } from "../users/entities/user.entity";
 import { nowCN } from "../common/utils/timezone";
 import { CurrentUser } from "../common/services/data-permission.service";
 import { SessionKeyStore } from "../common/services/session-key.store";
+import { DataPermissionService } from "../common/services/data-permission.service";
 
 @Injectable()
 export class EndUsersService {
@@ -29,6 +33,7 @@ export class EndUsersService {
     private cardsRepository: Repository<Card>,
     private jwtService: JwtService,
     private sessionKeyStore: SessionKeyStore,
+    private dataPermissionService: DataPermissionService,
   ) { }
 
   async create(
@@ -104,8 +109,10 @@ export class EndUsersService {
         // agent 只看使用自己创建的卡密激活的用户
         queryBuilder.andWhere("endUser.card_creator_id = :userId", { userId });
       } else if (currentUser.role === AdminRole.DEVELOPER) {
-        // developer 看自己创建的应用下的所有用户
-        queryBuilder.andWhere("app.creator_id = :userId", { userId });
+        // developer sees users under their own and subordinate applications.
+        await this.dataPermissionService.applyFilter(queryBuilder, currentUser, {
+          alias: "app", fieldName: "creator_id",
+        });
       }
     }
 
@@ -131,18 +138,20 @@ export class EndUsersService {
 
     const [list, total] = await queryBuilder.getManyAndCount();
 
-    // 为每个用户添加 device_count 和 devices 列表
-    const listWithDeviceInfo = await Promise.all(
-      list.map(async (user) => {
-        const devices = await this.devicesRepository.find({
-          where: { end_user_id: user.id },
-          select: ["id", "hwid", "device_name", "status", "last_heartbeat", "is_banned"],
-          order: { last_heartbeat: "DESC" },
-        });
-        const deviceCount = devices.length;
-        return { ...user, device_count: deviceCount, devices };
-      })
-    );
+    const devices = list.length ? await this.devicesRepository.find({
+      where: { end_user_id: In(list.map(user => user.id)) },
+      select: ["id", "end_user_id", "hwid", "device_name", "status", "last_heartbeat", "is_banned"],
+      order: { last_heartbeat: "DESC" },
+    }) : [];
+    const grouped = new Map<number, Device[]>();
+    for (const device of devices) {
+      const group = grouped.get(Number(device.end_user_id)) || [];
+      group.push(device); grouped.set(Number(device.end_user_id), group);
+    }
+    const listWithDeviceInfo = list.map(user => ({ ...user,
+      device_count: (grouped.get(Number(user.id)) || []).length,
+      devices: grouped.get(Number(user.id)) || [],
+    }));
 
     return { list: listWithDeviceInfo, total };
   }
@@ -167,60 +176,41 @@ export class EndUsersService {
     });
   }
 
-  async update(
-    id: number,
-    updateEndUserDto: UpdateEndUserDto,
-  ): Promise<EndUser> {
-    // 如果传了密码，先做 bcrypt 哈希
-    if (updateEndUserDto.password) {
-      updateEndUserDto.password = await bcrypt.hash(updateEndUserDto.password, 10);
-    }
-
-    const endUser = await this.findOne(id);
-    Object.assign(endUser, updateEndUserDto);
-    const saved = await this.endUsersRepository.save(endUser);
-
-    // 如果禁用了用户，主动吊销其 token
-    if (updateEndUserDto.is_active === false) {
-      this.sessionKeyStore.revokeUser(id);
-    }
-    // 如果重新启用了用户，取消吊销
-    if (updateEndUserDto.is_active === true) {
-      this.sessionKeyStore.unrevokeUser(id);
-    }
-
-    return saved;
+  async update(id: number, dto: UpdateEndUserDto): Promise<EndUser> {
+    const patch: any = { ...dto };
+    if (patch.password) patch.password = await bcrypt.hash(patch.password, 10);
+    else delete patch.password;
+    return this.endUsersRepository.manager.transaction(async manager => {
+      const user = await manager.findOne(EndUser, { where: { id }, lock: { mode: "pessimistic_write" } });
+      if (!user) throw new NotFoundException("用户不存在");
+      if (patch.password || patch.is_active !== undefined || patch.hwid !== undefined || patch.app_id !== undefined) {
+        patch.token_version = user.token_version + 1;
+        await this.sessionKeyStore.revokeUser(id, manager);
+      }
+      await manager.update(EndUser, id, patch);
+      return manager.findOneBy(EndUser, { id });
+    });
   }
 
   async remove(id: number): Promise<void> {
-    try {
-      const endUser = await this.findOne(id);
-
-      // 1. 解绑所有设备
-      await this.devicesRepository.update(
-        { end_user_id: id },
-        { end_user_id: null }
-      );
-
-      // 2. 解除卡密使用记录
-      // 注意：Card实体中 used_by 是外键关联，used_by_id 是独立字段
-      // 必须通过 used_by 关联来查找
-      await this.cardsRepository.update(
-        { used_by: { id } },
-        { used_by: null, used_by_id: null }
-      );
-
-      // 3. 删除用户
-      await this.endUsersRepository.remove(endUser);
-    } catch (error) {
-      console.error("Error deleting end user:", error);
-      throw error;
-    }
+    await this.endUsersRepository.manager.transaction(async manager => {
+      const user = await manager.findOne(EndUser, { where: { id }, lock: { mode: "pessimistic_write" } });
+      if (!user) throw new NotFoundException("用户不存在");
+      await this.sessionKeyStore.revokeUser(id, manager);
+      await manager.delete(Device, { end_user_id: id });
+      await manager.query("UPDATE card SET used_by = NULL, used_by_id = NULL WHERE used_by = ?", [id]);
+      await manager.delete(EndUser, id);
+    });
   }
 
   async unbindHwid(id: number): Promise<void> {
-    // 解绑该用户的所有设备（删除 Device 表中的记录）
-    await this.devicesRepository.delete({ end_user_id: id });
+    await this.endUsersRepository.manager.transaction(async manager => {
+      const user = await manager.findOne(EndUser, { where: { id }, lock: { mode: "pessimistic_write" } });
+      if (!user) throw new NotFoundException("用户不存在");
+      await manager.delete(Device, { end_user_id: id });
+      await manager.update(EndUser, id, { hwid: null, token_version: user.token_version + 1 });
+      await this.sessionKeyStore.revokeUser(id, manager);
+    });
   }
 
   async count(): Promise<number> {
@@ -235,253 +225,107 @@ export class EndUsersService {
 
   // ==================== 客户端认证方法 ====================
 
-  async clientRegister(
-    dto: ClientRegisterDto,
-  ): Promise<{
-    user: EndUser;
-    trial_granted: boolean;
-    trial_expire_time: Date | null;
-    trial_message: string;
-  }> {
-    // 校验应用存在且处于启用状态
-    const app = await this.appsRepository.findOne({
-      where: { id: dto.app_id },
-    });
-    if (!app) {
-      throw new BadRequestException("应用不存在");
+  /** Caller holds the end-user row lock, serializing device quota checks. */
+  async bindDevice(manager: EntityManager, user: EndUser, hwid: string, deviceName?: string) {
+    if (typeof hwid !== "string" || !hwid.trim() || hwid.length > 255) throw new BadRequestException("无效设备 ID");
+    const repository = manager.getRepository(Device);
+    let device = await repository.findOneBy({ app_id: user.app_id, end_user_id: user.id, hwid });
+    if (device?.is_banned) throw new ForbiddenException("设备已被封禁");
+    if (!device) {
+      const count = await repository.countBy({ end_user_id: user.id });
+      if (count >= user.max_devices) throw new ForbiddenException("已达到设备绑定上限，请先解绑其他设备");
+      device = repository.create({ app_id: user.app_id, end_user_id: user.id, hwid });
     }
-    if (!app.is_active) {
-      throw new ForbiddenException("应用已下线，暂停注册");
-    }
-
-    // 检查用户名是否已存在（同一应用下）
-    const existing = await this.endUsersRepository.findOne({
-      where: { username: dto.username, app_id: dto.app_id },
-    });
-
-    if (existing) {
-      throw new BadRequestException("用户名已存在");
-    }
-
-    // 加密密码
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
-
-    // 创建用户（默认不发放试用）
-    const endUser = this.endUsersRepository.create({
-      username: dto.username,
-      password: hashedPassword,
-      app_id: dto.app_id,
-      hwid: dto.hwid,
-      is_active: true,
-      max_devices: 1,
-    });
-
-    // ============ 试用发放规则 ============
-    // 前置条件：应用开启试用 && 时长 > 0
-    // 必要条件：必须提供 hwid（否则任何人都能无限刷号）
-    // 排他条件：同一 App 下，同一 HWID 之前未发放过试用
-    let trialGranted = false;
-    let trialMessage = "应用未开启试用";
-
-    if (!app.trial_enabled || app.trial_duration <= 0) {
-      // 保持默认消息
-    } else if (!dto.hwid) {
-      trialMessage = "试用需要提供硬件 ID";
-    } else {
-      const existingTrial = await this.endUsersRepository.findOne({
-        where: {
-          app_id: dto.app_id,
-          hwid: dto.hwid,
-          has_used_trial: true,
-        },
-      });
-
-      if (existingTrial) {
-        trialMessage = "此设备已在本应用使用过试用";
-      } else {
-        const now = nowCN();
-        endUser.expire_time = new Date(
-          now.getTime() + app.trial_duration * 1000,
-        );
-        endUser.max_devices = app.trial_device_limit || 1;
-        endUser.has_used_trial = true;
-        trialGranted = true;
-        trialMessage = `已发放 ${app.trial_duration} 秒试用`;
-      }
-    }
-
-    const savedUser = await this.endUsersRepository.save(endUser);
-
-    return {
-      user: savedUser,
-      trial_granted: trialGranted,
-      trial_expire_time: savedUser.expire_time || null,
-      trial_message: trialMessage,
-    };
+    device.last_heartbeat = new Date();
+    device.status = DeviceStatus.ONLINE;
+    if (deviceName) device.device_name = deviceName;
+    return repository.save(device);
   }
 
-  async clientLogin(dto: ClientLoginDto): Promise<{
-    access_token: string;
-    user: EndUser;
-    heart_interval?: number;
-    heartbeat_timeout?: number;
-    is_valid: boolean;
-    expire_time: Date | null;
-    valid_message: string;
-  }> {
-    // 查找用户
-    const user = await this.endUsersRepository
-      .createQueryBuilder("endUser")
-      .where("endUser.username = :username", { username: dto.username })
-      .andWhere("endUser.app_id = :appId", { appId: dto.app_id })
-      .addSelect("endUser.password")
-      .getOne();
-
-    if (!user) {
-      throw new UnauthorizedException("用户名或密码错误");
+  private async grantTrial(manager: EntityManager, user: EndUser, app: App, hwid?: string): Promise<boolean> {
+    if (!app.trial_enabled || app.trial_duration <= 0 || !hwid || user.has_used_trial) return false;
+    // The immutable unique claim survives unbinding, HWID changes and account deletion.
+    try {
+      await manager.insert(TrialClaim, { app_id: app.id, hwid, user_id: user.id });
+    } catch (error) {
+      if (error.code === "ER_DUP_ENTRY") return false;
+      throw error;
     }
-
-    // 验证密码
-    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException("用户名或密码错误");
-    }
-
-    // 检查是否被禁用
-    if (!user.is_active) {
-      throw new UnauthorizedException("账号已被禁用");
-    }
-
-    // 获取应用配置
-    let heartInterval = 60;
-    let heartbeatTimeout = 180;
-    const app = await this.appsRepository.findOne({ where: { id: dto.app_id } });
-    if (app && !app.is_active) {
-      throw new ForbiddenException("应用已下线");
-    }
-    if (app && app.heart_interval > 0) {
-      heartInterval = app.heart_interval;
-      const multiplier = app.heartbeat_timeout_multiplier || 3;
-      heartbeatTimeout = heartInterval * multiplier;
-    }
-
-    // 设备绑定检查（如果提供了 HWID）
-    // 新逻辑：一个设备可以被多个用户使用，但每个用户有自己的设备绑定配额
-    if (dto.hwid) {
-      // 查找该用户是否已绑定过此设备（用 hwid + end_user_id 组合查询）
-      let device = await this.devicesRepository.findOne({
-        where: { hwid: dto.hwid, end_user_id: user.id },
-      });
-
-      if (device) {
-        // 用户已绑定过此设备，更新设备信息
-        device.app_id = dto.app_id;
-        device.last_heartbeat = nowCN();
-        device.status = DeviceStatus.ONLINE;
-        // 如果提供了设备名称，更新
-        if (dto.device_name) {
-          device.device_name = dto.device_name;
-        }
-        await this.devicesRepository.save(device);
-      } else {
-        // 用户未绑定过此设备，检查用户是否还有设备配额
-        const boundDevicesCount = await this.devicesRepository.count({
-          where: { end_user_id: user.id },
-        });
-
-        if (boundDevicesCount >= user.max_devices) {
-          throw new UnauthorizedException(
-            `已达到设备绑定上限(${user.max_devices}台)，请先解绑其他设备`
-          );
-        }
-
-        // 创建新的用户-设备绑定记录
-        device = this.devicesRepository.create({
-          hwid: dto.hwid,
-          end_user_id: user.id,
-          app_id: dto.app_id,
-          status: DeviceStatus.ONLINE,
-          last_heartbeat: nowCN(),
-          device_name: dto.device_name || null,
-        });
-        await this.devicesRepository.save(device);
-      }
-    }
-
-    // 注意：登录时不检查是否过期，允许用户登录后充值
-    // 过期检查在心跳或使用软件功能时进行
-
-    // 更新最后登录时间和 IP
-    await this.endUsersRepository.update(user.id, {
-      last_login: new Date(),
-      hwid: dto.hwid || user.hwid,
-    });
-
-    // 存储会话公钥（如果客户端提供了）
-    if (dto.session_public_key) {
-      this.sessionKeyStore.setSessionKey(user.id, dto.session_public_key);
-    }
-
-    // 生成 JWT
-    const payload = {
-      sub: user.id,
-      username: user.username,
-      app_id: user.app_id,
-      type: "end_user",
-    };
-
-    const access_token = this.jwtService.sign(payload);
-
-    // 移除密码
-    delete user.password;
-
-    // 计算 is_valid 和 valid_message
-    const now = nowCN();
-    let is_valid = false;
-    let valid_message = "";
-
-    if (!user.is_active) {
-      is_valid = false;
-      valid_message = "账号已被禁用";
-    } else if (!user.expire_time) {
-      is_valid = false;
-      valid_message = "未激活，请充值";
-    } else {
-      const expireDate = new Date(user.expire_time);
-      if (isNaN(expireDate.getTime())) {
-        is_valid = false;
-        valid_message = "授权信息无效";
-      } else if (expireDate < now) {
-        is_valid = false;
-        valid_message = "授权已过期";
-      } else {
-        is_valid = true;
-        valid_message = "";
-      }
-    }
-
-    return {
-      access_token,
-      user,
-      heart_interval: heartInterval,
-      heartbeat_timeout: heartbeatTimeout,
-      is_valid,
-      expire_time: user.expire_time,
-      valid_message,
-    };
+    user.has_used_trial = true;
+    user.expire_time = new Date(Math.max(Date.now(), new Date(user.expire_time || 0).getTime()) + app.trial_duration * 1000);
+    user.max_devices = Math.max(user.max_devices || 1, app.trial_device_limit || 1);
+    await manager.save(EndUser, user);
+    return true;
   }
 
-  /**
-   * 刷新终端用户的 JWT token
-   */
-  refreshToken(userId: number, username: string, appId: number): string {
-    const payload = {
-      sub: userId,
-      username,
-      app_id: appId,
-      type: "end_user",
-    };
-    return this.jwtService.sign(payload);
+  async clientRegister(dto: ClientRegisterDto) {
+    const password = await bcrypt.hash(dto.password, 10);
+    return this.endUsersRepository.manager.transaction(async manager => {
+      const app = await manager.findOne(App, { where: { id: dto.app_id }, lock: { mode: "pessimistic_write" } });
+      if (!app?.is_active) throw new ForbiddenException("应用不存在或已下线");
+      const existing = await manager.findOneBy(EndUser, { username: dto.username, app_id: dto.app_id });
+      if (existing) throw new BadRequestException("用户名已存在");
+      const user = manager.create(EndUser, { username: dto.username, password, app_id: app.id,
+        hwid: dto.hwid, is_active: true, max_devices: 1 });
+      try { await manager.save(EndUser, user); }
+      catch (error) { if (error.code === "ER_DUP_ENTRY") throw new BadRequestException("用户名已存在"); throw error; }
+      const granted = await this.grantTrial(manager, user, app, dto.hwid);
+      return { user, trial_granted: granted, trial_expire_time: granted ? user.expire_time : null,
+        trial_message: granted ? `已发放 ${app.trial_duration} 秒试用` : !app.trial_enabled ? "应用未开启试用" : !dto.hwid ? "试用需要提供硬件 ID" : "此设备或账号已使用过试用" };
+    });
+  }
+
+  async claimTrial(userId: number, appId: number, hwid: string) {
+    return this.endUsersRepository.manager.transaction(async manager => {
+      const user = await manager.findOne(EndUser, { where: { id: userId }, lock: { mode: "pessimistic_write" } });
+      const app = await manager.findOneBy(App, { id: appId });
+      if (!user?.is_active || !app?.is_active || Number(user.app_id) !== Number(appId)) throw new ForbiddenException("应用或账号无效");
+      if (!await this.grantTrial(manager, user, app, hwid)) throw new BadRequestException("无法领取试用：已领取或未开启");
+      await this.bindDevice(manager, user, hwid);
+      return { success: true, is_trial: true, expire_time: user.expire_time, added_seconds: app.trial_duration, max_devices: user.max_devices };
+    });
+  }
+
+  async clientLogin(dto: ClientLoginDto) {
+    const publicKey = this.sessionKeyStore.validatePublicKey(dto.session_public_key);
+    const credentials = await this.endUsersRepository.createQueryBuilder("u").addSelect("u.password")
+      .where("u.username = :name AND u.app_id = :appId", { name: dto.username, appId: dto.app_id }).getOne();
+    if (!credentials?.password || !await bcrypt.compare(dto.password, credentials.password)) throw new UnauthorizedException("用户名或密码错误");
+    return this.endUsersRepository.manager.transaction(async manager => {
+      const user = await manager.findOne(EndUser, { where: { id: credentials.id }, lock: { mode: "pessimistic_write" } });
+      if (!user?.is_active || user.token_version !== credentials.token_version) throw new UnauthorizedException("账号状态已改变，请重新登录");
+      const app = await manager.findOneBy(App, { id: dto.app_id });
+      if (!app?.is_active) throw new ForbiddenException("应用已下线");
+      await this.bindDevice(manager, user, dto.hwid, dto.device_name);
+      user.last_login = new Date(); user.hwid = dto.hwid;
+      await manager.update(EndUser, user.id, { last_login: user.last_login, hwid: user.hwid });
+      const session = await this.sessionKeyStore.createSession(user.id, dto.hwid, publicKey, manager);
+      return { access_token: this.signToken(user, session.id), user,
+        heart_interval: app.heart_interval, heartbeat_timeout: app.heart_interval * app.heartbeat_timeout_multiplier,
+        expire_time: user.expire_time, ...licenseStatus(user) };
+    });
+  }
+
+  private signToken(user: EndUser, sessionId: string): string {
+    return this.jwtService.sign({ sub: user.id, type: "end_user", app_id: Number(user.app_id), ver: user.token_version, sid: sessionId });
+  }
+
+  async heartbeat(identity: any, dto: { hwid: string; device_name?: string }) {
+    if (dto.hwid !== identity.hwid) throw new ForbiddenException("设备与登录会话不匹配");
+    return this.endUsersRepository.manager.transaction(async manager => {
+      const user = await manager.findOne(EndUser, { where: { id: identity.userId }, lock: { mode: "pessimistic_write" } });
+      if (!user?.is_active || user.token_version !== identity.token_version) throw new UnauthorizedException("登录已失效");
+      const app = await manager.findOneBy(App, { id: user.app_id });
+      if (!app?.is_active) return { success: false, is_active: false, commands: ["force_logout"], message: "应用已下线" };
+      await this.bindDevice(manager, user, dto.hwid, dto.device_name);
+      await this.sessionKeyStore.touch(identity.session_id, user.id);
+      const status = licenseStatus(user);
+      return { success: true, is_active: status.is_valid, ...status, expire_time: user.expire_time,
+        username: user.username, max_devices: user.max_devices,
+        bound_devices: await manager.countBy(Device, { end_user_id: user.id }),
+        interval: app.heart_interval, heartbeat_timeout: app.heart_interval * app.heartbeat_timeout_multiplier,
+        server_time: Date.now(), commands: [], message: status.valid_message, new_token: this.signToken(user, identity.session_id) };
+    });
   }
 
   async findByUsername(username: string, appId: number): Promise<EndUser | null> {

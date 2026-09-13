@@ -1,63 +1,49 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { EntityManager, LessThan, MoreThan, Repository } from "typeorm";
+import { createPublicKey, randomUUID } from "crypto";
+import { ClientSession } from "../entities/client-session.entity";
 
-/**
- * 内存会话密钥存储
- *
- * 存储每个终端用户的：
- * 1. 会话 RSA 公钥（用于加密响应）
- * 2. 已吊销的用户 ID（用于强制登出）
- */
+const SESSION_TTL = 7 * 86400 * 1000;
+
 @Injectable()
 export class SessionKeyStore {
-  private readonly logger = new Logger(SessionKeyStore.name);
+  constructor(@InjectRepository(ClientSession) private readonly sessions: Repository<ClientSession>) {}
 
-  // userId -> PEM 格式的 RSA 公钥
-  private sessionKeys = new Map<number, string>();
-
-  // 已吊销的用户 ID -> 吊销时间戳
-  private revokedUsers = new Map<number, number>();
-
-  // ==================== 会话公钥管理 ====================
-
-  setSessionKey(userId: number, publicKeyPem: string): void {
-    this.sessionKeys.set(userId, publicKeyPem);
-    this.logger.debug(`已存储用户 ${userId} 的会话公钥`);
+  validatePublicKey(pem?: string): string | null {
+    if (!pem) return null;
+    try {
+      if (typeof pem !== "string" || pem.length > 8192) throw new Error();
+      const key = createPublicKey(pem);
+      const bits = key.asymmetricKeyDetails?.modulusLength || 0;
+      if (key.asymmetricKeyType !== "rsa" || bits < 2048 || bits > 4096) throw new Error();
+      return key.export({ type: "spki", format: "pem" }).toString();
+    } catch { throw new BadRequestException("会话公钥必须为 2048–4096 位 RSA 公钥"); }
   }
 
-  getSessionKey(userId: number): string | null {
-    return this.sessionKeys.get(userId) || null;
+  async createSession(userId: number, hwid: string, publicKey?: string, manager?: EntityManager) {
+    const repository = manager ? manager.getRepository(ClientSession) : this.sessions;
+    const session = repository.create({ id: randomUUID(), user_id: userId, hwid,
+      public_key: this.validatePublicKey(publicKey), expires_at: new Date(Date.now() + SESSION_TTL) });
+    // Bound retention to active sessions; all instances use the same persisted keys.
+    await repository.delete({ user_id: userId, expires_at: LessThan(new Date()) });
+    return repository.save(session);
   }
 
-  deleteSessionKey(userId: number): void {
-    this.sessionKeys.delete(userId);
+  async getSession(id: string, userId: number) {
+    if (typeof id !== "string" || !/^[a-f\d-]{36}$/i.test(id)) throw new UnauthorizedException("请重新登录");
+    const session = await this.sessions.findOne({ where: { id, user_id: userId, expires_at: MoreThan(new Date()) } });
+    if (!session) throw new UnauthorizedException("登录已失效，请重新登录");
+    return session;
   }
 
-  // ==================== 用户吊销管理 ====================
-
-  revokeUser(userId: number): void {
-    this.revokedUsers.set(userId, Date.now());
-    this.deleteSessionKey(userId);
-    this.logger.log(`已吊销用户 ${userId}`);
+  async touch(id: string, userId: number) {
+    const result = await this.sessions.update({ id, user_id: userId, expires_at: MoreThan(new Date()) },
+      { expires_at: new Date(Date.now() + SESSION_TTL) });
+    if (result.affected !== 1) throw new UnauthorizedException("登录已失效，请重新登录");
   }
 
-  isRevoked(userId: number): boolean {
-    return this.revokedUsers.has(userId);
-  }
-
-  unrevokeUser(userId: number): void {
-    this.revokedUsers.delete(userId);
-  }
-
-  /**
-   * 清理过期的吊销记录（超过 maxAge 毫秒的）
-   * 默认清理 24 小时前的记录
-   */
-  cleanupRevoked(maxAge: number = 24 * 60 * 60 * 1000): void {
-    const cutoff = Date.now() - maxAge;
-    for (const [userId, timestamp] of this.revokedUsers) {
-      if (timestamp < cutoff) {
-        this.revokedUsers.delete(userId);
-      }
-    }
+  async revokeUser(userId: number, manager?: EntityManager) {
+    await (manager ? manager.getRepository(ClientSession) : this.sessions).delete({ user_id: userId });
   }
 }

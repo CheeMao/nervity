@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 
 /**
@@ -8,8 +8,13 @@ import { AuthGuard } from "@nestjs/passport";
  */
 @Injectable()
 export class OptionalJwtAuthGuard extends AuthGuard("jwt") {
+  canActivate(context: ExecutionContext) {
+    if (!context.switchToHttp().getRequest().headers.authorization) return true;
+    return super.canActivate(context);
+  }
+
   handleRequest(err: any, user: any) {
-    // 不抛出错误，即使没有用户也继续
+    if (err || !user || user.type !== "end_user") throw err || new UnauthorizedException();
     return user;
   }
 }

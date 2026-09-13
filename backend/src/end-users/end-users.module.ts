@@ -16,7 +16,7 @@ import { Card } from "../cards/entities/card.entity";
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>("JWT_SECRET", "secretKey"),
+        secret: configService.getOrThrow<string>("JWT_SECRET"),
         signOptions: { expiresIn: "7d" },
       }),
       inject: [ConfigService],

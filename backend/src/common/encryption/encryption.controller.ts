@@ -1,3 +1,4 @@
+import { Public } from "../../auth/decorators/access-scope.decorator";
 import { Controller, Get } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { EncryptionService } from "./encryption.service";
@@ -7,6 +8,7 @@ import { EncryptionService } from "./encryption.service";
 export class EncryptionController {
   constructor(private readonly encryptionService: EncryptionService) {}
 
+  @Public()
   @Get("public-key")
   @ApiOperation({ summary: '获取RSA公钥', description: '获取用于混合加密的RSA公钥' })
   @ApiResponse({ status: 200, description: '成功', schema: {

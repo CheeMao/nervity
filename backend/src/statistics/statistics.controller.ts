@@ -2,10 +2,11 @@ import { Controller, Get, Query, UseGuards, Request } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from "@nestjs/swagger";
 import { StatisticsService } from "./statistics.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { RequirePermissions } from "../access-control/decorators/require-permissions.decorator";
 
 @ApiTags('统计数据 (Statistics)')
 @Controller("statistics")
-@UseGuards(JwtAuthGuard)
+@RequirePermissions('stats:read')
 @ApiBearerAuth('JWT-auth')
 export class StatisticsController {
   constructor(private readonly statisticsService: StatisticsService) {}
